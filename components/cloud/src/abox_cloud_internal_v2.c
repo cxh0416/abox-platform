@@ -42,36 +42,61 @@ void ABoxCloudRequestId_ExtractRaw(const char *payload, size_t length,
     }
 }
 
+ABoxCloudInternalV2Status ABoxCloudInternalV2_Read(cJSON *root,
+    const char *expected_product, size_t request_id_capacity,
+    ABoxCloudInternalV2Policy policy, ABoxCloudInternalV2Fields *fields)
+{
+    cJSON *version, *timestamp, *data, *product, *id;
+    cJSON *(*item)(const cJSON *, const char *) =
+        policy == ABOX_INTERNAL_V2_TYPED_TIMESTAMP_COMPAT ?
+        cJSON_GetObjectItem : cJSON_GetObjectItemCaseSensitive;
+    if (!fields) return ABOX_INTERNAL_V2_INVALID_DATA;
+    memset(fields, 0, sizeof(*fields));
+    data = item(root, "data");
+    if (!cJSON_IsObject(data)) return ABOX_INTERNAL_V2_INVALID_DATA;
+    id = item(data, "requestId");
+    if (!request_id_capacity || !cJSON_IsString(id) || !id->valuestring ||
+        (policy == ABOX_INTERNAL_V2_TYPED_TIMESTAMP_COMPAT ?
+         strlen(id->valuestring) >= request_id_capacity :
+         !ABoxCloudRequestId_Valid(id->valuestring, request_id_capacity)))
+        return ABOX_INTERNAL_V2_INVALID_ID;
+    fields->request_id = id->valuestring;
+    version = item(root, "version");
+    timestamp = item(root, "timestamp");
+    if (!cJSON_IsString(version) || strcmp(version->valuestring, "2.0") ||
+        (policy == ABOX_INTERNAL_V2_TYPED_TIMESTAMP_COMPAT && !cJSON_IsNumber(timestamp)))
+        return ABOX_INTERNAL_V2_INVALID_VERSION_TIMESTAMP;
+    fields->command = item(data, "command");
+    fields->params = item(data, "params");
+    if (!cJSON_IsString(fields->command)) return ABOX_INTERNAL_V2_INVALID_COMMAND;
+    if (policy == ABOX_INTERNAL_V2_STRICT && !cJSON_IsObject(fields->params))
+        return ABOX_INTERNAL_V2_INVALID_PARAMS;
+    product = item(data, "product");
+    if (expected_product && product &&
+        (!cJSON_IsString(product) || strcmp(product->valuestring, expected_product)))
+        return ABOX_INTERNAL_V2_INVALID_PRODUCT;
+    return ABOX_INTERNAL_V2_OK;
+}
+
 int ABoxCloudInternalV2_Open(const char *payload, size_t length,
                              const char *expected_product,
                              size_t request_id_capacity,
                              ABoxCloudInternalV2Envelope *envelope)
 {
-    cJSON *version, *data, *product, *request_id, *command, *params;
+    ABoxCloudInternalV2Fields fields;
     if (!envelope) return 0;
     memset(envelope, 0, sizeof(*envelope));
     if (!payload || !request_id_capacity) return 0;
     envelope->root = cJSON_ParseWithLength(payload, length);
     if (!envelope->root) return 0;
-    version = cJSON_GetObjectItemCaseSensitive(envelope->root, "version");
-    data = cJSON_GetObjectItemCaseSensitive(envelope->root, "data");
-    product = cJSON_IsObject(data) ? cJSON_GetObjectItemCaseSensitive(data, "product") : 0;
-    request_id = cJSON_IsObject(data) ? cJSON_GetObjectItemCaseSensitive(data, "requestId") : 0;
-    command = cJSON_IsObject(data) ? cJSON_GetObjectItemCaseSensitive(data, "command") : 0;
-    params = cJSON_IsObject(data) ? cJSON_GetObjectItemCaseSensitive(data, "params") : 0;
-    if (!cJSON_IsString(version) || strcmp(version->valuestring, "2.0") != 0 ||
-        !cJSON_IsObject(data) || !cJSON_IsString(request_id) ||
-        !ABoxCloudRequestId_Valid(request_id->valuestring, request_id_capacity) ||
-        !cJSON_IsString(command) || !cJSON_IsObject(params) ||
-        (expected_product && product &&
-         (!cJSON_IsString(product) ||
-          strcmp(product->valuestring, expected_product) != 0))) {
+    if (ABoxCloudInternalV2_Read(envelope->root, expected_product, request_id_capacity,
+            ABOX_INTERNAL_V2_STRICT, &fields) != ABOX_INTERNAL_V2_OK) {
         ABoxCloudInternalV2_Close(envelope);
         return 0;
     }
-    envelope->params = params;
-    envelope->request_id = request_id->valuestring;
-    envelope->command = command;
+    envelope->params = fields.params;
+    envelope->request_id = fields.request_id;
+    envelope->command = fields.command;
     return 1;
 }
 

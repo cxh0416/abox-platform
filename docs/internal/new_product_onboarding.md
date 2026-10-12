@@ -20,6 +20,10 @@ App CMake 使用 `abox_platform_attach_standard_app(target PRODUCT_CONFIG_DIR di
 
 ## OTA 和资源
 
+内部包络与响应复用 `ABoxCloudInternalV2`、`ABoxCloudResponse`，产品保留Topic、动作参数和错误映射。`Open` 仍执行既有严格校验；对已有大小写不敏感、数字timestamp和有界requestId兼容路径，`Read` 从已解析root读取借用字段并返回错误阶段，不能借重构收紧旧设备报文准入。`Close` 只用于 `Open` 持有的root，`Read` 不持有root。
+
+响应可通过 `EncodeResult` 回调直接向调用方缓冲区打印result，不需要第二份产品大小的序列化缓冲。现有 `Encode` 的NULL result仍默认为 `{}`；产品既有 `null` 或字段缺省由适配层保持，响应队列、超长回退、回执与副作用时序不由编码器接管。三产品兼容验证与范围见[内部编解码收敛记录](internal_v2_codec_convergence.md)。
+
 `ABoxBootV2Ec800Adapter_BindServices` 使用同一 AT 和 MQTT bridge，绑定 MQTT 暂停、停止、workspace 借还及客户端。App OTA 继续使用现有 Boot V2 状态机；产品保留版本、artifact/Flash 合同、专用传输缓冲区和安全 callback。暂停、借还与网络恢复必须由通信 owner 执行。
 
 固定故障邮箱、最小 heap/stack 和 Flash 页布局通过产品 linker 与发布合同校验。公共 callback table 使用 const Flash 存储；新服务不得复制产品 payload。`tools/service_stack_budget.json` 声明已知 owner 调用链及保留量，公共构建收集 `.su` 并在发布前检查。静态栈估计不能代替运行时高水位测量。

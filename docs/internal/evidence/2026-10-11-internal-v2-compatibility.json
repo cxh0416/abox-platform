@@ -1,0 +1,32 @@
+[
+  {
+    "product": "meal",
+    "baseline_revision": "c62633443da47b58a007d0472a6e15e5be71b1c6",
+    "platform_revision": "d3e3f7a9f8410f212b66b29f6d4b0d03f1513c70",
+    "product_regression": "passed",
+    "wire_vectors": 359,
+    "before_after_equal": true,
+    "product_output_sha256": "319312b37fda8a11402cfa359b7ce3d89116558f86cd49ff7a919c2e9bb9d7f4",
+    "response_output_sha256": "9d7c65d1aec98fecd87f902a2cf4300f5d5de7f1fa9c617b77d67e0b971d418e"
+  },
+  {
+    "product": "sweeper",
+    "baseline_revision": "e55620b40cee6469f37923a8a7e5ffce75fdebca",
+    "platform_revision": "554897f950b803e9f6a1d995a37c876a28bf2aa6",
+    "product_regression": "passed",
+    "wire_vectors": 359,
+    "before_after_equal": true,
+    "product_output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "response_output_sha256": "9d7c65d1aec98fecd87f902a2cf4300f5d5de7f1fa9c617b77d67e0b971d418e"
+  },
+  {
+    "product": "patrol",
+    "baseline_revision": "387310c0e2faaf2001baab82e3689021957238f0",
+    "platform_revision": "2573618bdb15878ebf635e5d450f1e2f8e8abac7",
+    "product_regression": "passed",
+    "wire_vectors": 359,
+    "before_after_equal": true,
+    "product_output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "response_output_sha256": "9d7c65d1aec98fecd87f902a2cf4300f5d5de7f1fa9c617b77d67e0b971d418e"
+  }
+]

@@ -39,5 +39,32 @@ int main(void)
     assert(!open(missing_params, 0, &envelope));
     assert(!open("{\"version\":\"4.0\",\"data\":{}}", 0, &envelope));
     assert(!open("{\"version\":\"2.0\",\"data\":{\"requestId\":\"bad id\",\"command\":\"x\",\"params\":{}}}", 0, &envelope));
+    {
+        ABoxCloudInternalV2Fields fields;
+        cJSON *root = cJSON_Parse("{\"VERSION\":\"2.0\",\"timestamp\":-1.5,\"DATA\":{\"requestId\":\"\",\"COMMAND\":\"internal_config\",\"params\":null}}");
+        assert(ABoxCloudInternalV2_Read(root, 0, 65U, ABOX_INTERNAL_V2_TYPED_TIMESTAMP_COMPAT,
+            &fields) == ABOX_INTERNAL_V2_OK);
+        assert(fields.request_id[0] == 0 && cJSON_IsNull(fields.params));
+        assert(ABoxCloudInternalV2_Read(root, 0, 64U, ABOX_INTERNAL_V2_STRICT,
+            &fields) == ABOX_INTERNAL_V2_INVALID_DATA);
+        cJSON_Delete(root);
+        root = cJSON_Parse("{\"version\":\"2.0\",\"data\":{\"requestId\":\"r\",\"command\":\"x\",\"params\":{}}}");
+        assert(ABoxCloudInternalV2_Read(root, 0, 65U, ABOX_INTERNAL_V2_TYPED_TIMESTAMP_COMPAT,
+            &fields) == ABOX_INTERNAL_V2_INVALID_VERSION_TIMESTAMP);
+        assert(strcmp(fields.request_id, "r") == 0);
+        assert(ABoxCloudInternalV2_Read(root, 0, 64U, ABOX_INTERNAL_V2_STRICT,
+            &fields) == ABOX_INTERNAL_V2_OK);
+        cJSON_Delete(root);
+        root = cJSON_Parse("{\"version\":\"2.0\",\"timestamp\":0,\"data\":{\"requestId\":\"r\",\"params\":[]}}");
+        assert(ABoxCloudInternalV2_Read(root, 0, 65U, ABOX_INTERNAL_V2_TYPED_TIMESTAMP_COMPAT,
+            &fields) == ABOX_INTERNAL_V2_INVALID_COMMAND);
+        cJSON_Delete(root);
+        root = cJSON_Parse("{\"version\":\"2.0\",\"timestamp\":0,\"data\":{\"requestId\":\"a b\",\"command\":\"x\",\"params\":[]}}");
+        assert(ABoxCloudInternalV2_Read(root, 0, 65U, ABOX_INTERNAL_V2_TYPED_TIMESTAMP_COMPAT,
+            &fields) == ABOX_INTERNAL_V2_OK);
+        assert(ABoxCloudInternalV2_Read(root, 0, 64U, ABOX_INTERNAL_V2_STRICT,
+            &fields) == ABOX_INTERNAL_V2_INVALID_ID);
+        cJSON_Delete(root);
+    }
     return 0;
 }

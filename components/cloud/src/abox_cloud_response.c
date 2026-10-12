@@ -32,10 +32,10 @@ static void quoted(Writer *w, const char *s)
     }
     append(w, "\"");
 }
-int ABoxCloudResponse_Encode(char *output, size_t capacity,
+int ABoxCloudResponse_EncodeResult(char *output, size_t capacity,
     const char *version, const char *timestamp, const char *product,
     const char *request_id, uint16_t code, const char *message,
-    const char *result_json)
+    ABoxCloudResponseResultEncoder encode_result, void *context)
 {
     Writer w = {output, capacity, 0U, 1};
     char number[6];
@@ -52,8 +52,32 @@ int ABoxCloudResponse_Encode(char *output, size_t capacity,
     (void)snprintf(number, sizeof(number), "%u", (unsigned)code);
     append(&w, ",\"code\":"); append(&w, number);
     append(&w, ",\"msg\":"); quoted(&w, message);
-    append(&w, ",\"result\":"); append(&w, result_json ? result_json : "{}");
+    if (encode_result) {
+        char *end;
+        append(&w, ",\"result\":");
+        if (w.valid && encode_result(context, output + w.used, capacity - w.used) &&
+            (end = memchr(output + w.used, 0, capacity - w.used)) != 0)
+            w.used = (size_t)(end - output);
+        else w.valid = 0;
+    }
     append(&w, "}}");
     if (!w.valid) output[0] = 0;
     return w.valid;
+}
+static int raw_result(void *context, char *output, size_t capacity)
+{
+    const char *json = (const char *)context;
+    size_t size = strlen(json);
+    if (size >= capacity) return 0;
+    memcpy(output, json, size + 1U);
+    return 1;
+}
+int ABoxCloudResponse_Encode(char *output, size_t capacity,
+    const char *version, const char *timestamp, const char *product,
+    const char *request_id, uint16_t code, const char *message,
+    const char *result_json)
+{
+    return ABoxCloudResponse_EncodeResult(output, capacity, version, timestamp,
+        product, request_id, code, message, raw_result,
+        (void *)(result_json ? result_json : "{}"));
 }

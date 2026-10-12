@@ -20,6 +20,31 @@ typedef struct {
     cJSON *command;
 } ABoxCloudInternalV2Envelope;
 
+typedef struct {
+    cJSON *command, *params;
+    const char *request_id;
+} ABoxCloudInternalV2Fields;
+typedef enum {
+    ABOX_INTERNAL_V2_STRICT,
+    /* Existing case-insensitive lookup, bounded (possibly empty) ID, numeric
+     * timestamp and action-owned params validation. No wire format change. */
+    ABOX_INTERNAL_V2_TYPED_TIMESTAMP_COMPAT
+} ABoxCloudInternalV2Policy;
+typedef enum {
+    ABOX_INTERNAL_V2_OK,
+    ABOX_INTERNAL_V2_INVALID_DATA,
+    ABOX_INTERNAL_V2_INVALID_ID,
+    ABOX_INTERNAL_V2_INVALID_VERSION_TIMESTAMP,
+    ABOX_INTERNAL_V2_INVALID_COMMAND,
+    ABOX_INTERNAL_V2_INVALID_PARAMS,
+    ABOX_INTERNAL_V2_INVALID_PRODUCT
+} ABoxCloudInternalV2Status;
+/* Inspect an already parsed root. Fields borrow its lifetime; this function
+ * never frees it. Failure stages let each product keep its existing errors. */
+ABoxCloudInternalV2Status ABoxCloudInternalV2_Read(cJSON *root,
+    const char *expected_product, size_t request_id_capacity,
+    ABoxCloudInternalV2Policy policy, ABoxCloudInternalV2Fields *fields);
+
 int ABoxCloudRequestId_Valid(const char *value, size_t capacity);
 /* Recover an unescaped requestId from malformed JSON for a product's existing
  * error response. This is deliberately bounded and does not decode escapes. */
