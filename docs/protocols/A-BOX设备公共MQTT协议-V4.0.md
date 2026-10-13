@@ -8,252 +8,98 @@
 
 **修订日期：2026-09-30**
 
-> 五 Topic、公共消息模型、`command` 控制路由、`reportType + reportName` 上报路由、Manifest 能力治理及第 49 节参数均已冻结。兼容扩展必须遵循第 47 节，改变既有公共语义必须升级公共协议主版本。
+五 Topic、公共消息模型、路由、Manifest 能力治理及本文参数均已冻结。兼容扩展遵循第 9 节；改变既有公共语义必须升级公共协议主版本。
 
----
+| 查阅项 | 定义位置 |
+|---|---|
+| Topic、QoS、会话、身份 | 第 2 节 |
+| 公共字段类型、大小、词法 | 第 3 节 |
+| 请求、响应、错误码、有效期、重试 | 第 4 节 |
+| Report、去重、实例、顺序 | 第 5 节 |
+| 完整状态、sync_state | 第 6 节 |
+| 心跳、Manifest、版本和在线确认 | 第 7 节 |
+| 命名与 Profile 登记 | 第 8 节 |
+| 兼容性 | 第 9 节 |
+| Canonicalization、摘要、固定向量 | 规范性附录 A |
 
-## 1. 协议定位
+## 1. 范围与路由
 
-本协议定义车载 A-BOX 与业务平台之间统一、稳定的 MQTT 公共通信框架。
+本协议定义 A-BOX 与业务平台之间的公共通信契约。业务 Profile 定义命令参数、操作类别、`200` 成功边界、结果、报告、实例、状态枚举及业务安全语义；相同能力必须复用相同语义，不得因车型、客户或项目重新定义公共框架。
 
-A-BOX 为车载集成控制器，可根据不同车型同时对接一种或多种业务能力，例如：
+| 对象 | 权威规则 |
+|---|---|
+| 设备身份 | 每台物理 A-BOX 由平台分配全局唯一 `deviceId`，用于 Topic，不要求在每条 Payload 中重复 |
+| Request 路由 | `command + params`；执行前必须唯一确定目标操作 |
+| Report 路由 | 非心跳主动业务消息统一进入 `/report`，按 `reportType + reportName` 路由；业务数据放在 `payload` |
+| Profile | 能力、版本及业务语义的定义单位；一台设备可实现多个，不要求每条 Request/Report 携带 Profile 标识；Manifest 不参与逐条消息路由 |
+| 单实例 | 不要求实例标识 |
+| 多实例 | Report 使用 `instanceId`，请求目标字段由 Profile 在 `params` 中定义；具体约束见第 5.3 节 |
 
-- 车辆底盘；
-- 飞翼；
-- 格口；
-- 冷机；
-- 称重设备；
-- 其他后续扩展设备。
+内部总线、拓扑、轮询、控制仲裁、故障恢复算法不属于公共协议。设备信息、日志、配置、诊断、OTA 等继续使用独立 `/internal/*` 协议，允许离线恢复的运维业务不得与公共实时控制混用。
 
-不同车型安装的业务能力组合可以不同，但相同业务能力必须复用相同的命令、状态和上报语义，不得因车型、客户或项目重新定义公共通信框架。
+## 2. Topic、传输与会话
 
-本公共协议定义：
+### 2.1 Topic、QoS、Retain
 
-- MQTT Topic；
-- MQTT 会话策略；
-- 公共 JSON 外层；
-- 平台请求；
-- A-BOX 响应；
-- A-BOX 主动业务上报；
-- A-BOX 心跳；
-- Manifest 能力声明；
-- 请求分类、过期与幂等；
-- 状态同步；
-- Report 去重、多实例与可选顺序控制；
-- QoS 与 Retain；
-- 公共响应码；
-- Profile 版本兼容；
-- 安全、连接与兼容性规则。
+| 方向 | 消息 | Topic | QoS | Retain |
+|---|---|---|---:|---|
+| 平台 → A-BOX | Request | `/zxwl/abox/{deviceId}/request` | 1 | false |
+| A-BOX → 平台 | Response | `/zxwl/abox/{deviceId}/response` | 1 | false |
+| A-BOX → 平台 | state / event Report | `/zxwl/abox/{deviceId}/report` | 1 | false |
+| A-BOX → 平台 | telemetry Report | `/zxwl/abox/{deviceId}/report` | 0 | false |
+| A-BOX → 平台 | Heartbeat | `/zxwl/abox/{deviceId}/heartbeat` | 0 | false |
+| A-BOX → 平台 | Manifest | `/zxwl/abox/{deviceId}/manifest` | 1 | true |
 
-具体业务 Profile 负责定义：
+Profile 不得修改 Topic 结构或改变 Report QoS。平台可将上表 A-BOX → 平台的 Topic 中 `{deviceId}` 替换为 `+` 统一订阅；`/zxwl/abox/+/report` 订阅必须请求 QoS 1，避免 state/event 实际交付被降为 QoS 0。
 
-- `command`；
-- `params`；
-- 可执行操作及操作类别；
-- `200` 的业务成功边界；
-- 业务专用响应码；
-- `result`；
-- `reportName`；
-- `payload`；
-- 多实例规则；
-- 状态枚举；
-- 业务安全语义。
+不得通过 Retained Request 表达控制意图。telemetry 固定 QoS 0；必须可靠投递的数据应按实际语义归为 state/event，不得通过提升 telemetry QoS 规避分类。Report 不使用 Retain，状态恢复遵循第 6 节。
 
-A-BOX 内部 CAN、RS485、UART、IO、执行器拓扑、轮询机制、设备地址、安全状态机、控制仲裁及故障恢复算法均不属于公共平台协议。
+### 2.2 会话与自动重连
 
-设备信息、远程日志、配置管理、诊断、OTA 等内部运维能力继续使用独立 `/internal/*` 协议，不并入本公共业务协议。
+公共控制不得依赖 Broker 离线队列补发。
 
----
+| MQTT 版本 | A-BOX 公共业务客户端必需设置 |
+|---|---|
+| 3.1.1 | `Clean Session = true` |
+| 5.0 | 同时设置 `Clean Start = true`、`Session Expiry Interval = 0` |
 
-## 2. 核心设计原则
+上述会话要求只针对 A-BOX 公共业务客户端；平台消费者、Bridge 等服务端组件的持久会话由部署架构决定。
 
-### 2.1 A-BOX 是 MQTT 通信主体
+| 自动重连阶段 | 固定规则 |
+|---|---|
+| 首次连接 | 随机延迟 0～4 秒 |
+| 连续失败 | 退避上限依次为 4、8、16、32、60 秒，后续保持 60 秒 |
+| 实际延迟 | 每次从当前上限 50%～100% 取带设备差异的随机抖动，避免设备同步重连 |
+| 重置 | 稳定在线 5 分钟后重置退避级别 |
 
-每台物理 A-BOX 由平台分配全局唯一的：
+A-BOX 必须自动重连。成功重连后的逻辑发送顺序为 **Manifest → 启动/恢复 Heartbeat → 补发所有完整 State → 正常业务**。该顺序约束设备发送逻辑；平台不得假定不同 Topic 经中间链路仍按此顺序到达。能力确认前到达的 Report 可以保存或缓存，但不能据此确认新能力可用。
 
-```text
-deviceId
-```
+### 2.3 身份、ClientId 与 ACL
 
-`deviceId` 用于 MQTT Topic，不要求重复出现在每条 Payload 中。
+| 项目 | 约束 |
+|---|---|
+| `deviceId` | 1～32 个 ASCII 字符，完整匹配 `^[A-Za-z0-9_-]+$`；禁止 `/`、`+`、`#`、空白和控制字符 |
+| MQTT `ClientId` | 必须逐字等于 `deviceId` |
+| 凭据 | 每设备独立；禁止多台生产设备共享同一可写公共业务凭据 |
+| 服务端绑定 | 已认证设备身份唯一绑定一个 `deviceId`；Broker 绑定凭据、ClientId、Topic ACL，不得仅信任客户端声明的身份或 ClientId |
+| 发布权限 | 只能发布自身 `response`、`report`、`heartbeat`、`manifest` |
+| 订阅权限 | 只能订阅自身 `request` |
 
-公共业务请求通过 `command` 和业务 `params` 进行路由，设备能力由 Manifest 声明。
+ACL 必须由服务端身份绑定生成；禁止跨设备发布/订阅、用通配符扩大设备授权或构造 Topic 绕过绑定。
 
----
+生产允许明文 MQTT 或 MQTT over TLS，两者身份、独立凭据与 ACL 要求相同。TLS 最低 1.2，支持时优先 1.3；设备必须校验证书链、主机名、有效时间并发送正确 SNI。明文不提供保密性和传输层防篡改，部署方必须明确接受风险，不得标为 TLS。凭据轮换通过受控配置或生产 provisioning，不能走公共业务 Topic；切换后必须撤销旧凭据。
 
-### 2.2 `command` 负责控制路由
+## 3. 公共 JSON 与字段限制
 
-平台在项目对接阶段已明确车辆支持的业务能力。
+### 3.1 外层 Schema
 
-平台通过：
+所有 Payload 使用 UTF-8 JSON，禁止 BOM；固定 Topic 段使用小写。
 
-```text
-command + params
-```
-
-表达具体业务请求。
-
-例如：
-
-```text
-wing_control
-open_locker
-check_locker_status
-refrigeration_control
-vehicle_control
-```
-
-A-BOX 根据 `command` 和对应业务参数，在执行前确定具体可执行操作并完成路由。
-
----
-
-### 2.3 `reportType + reportName` 负责主动上报路由
-
-所有非心跳类主动业务消息统一进入 `/report`。
-
-公共层使用：
-
-```text
-reportType + reportName
-```
-
-识别消息类别和具体业务语义。
-
-业务字段全部放入：
-
-```text
-payload
-```
-
----
-
-### 2.4 Profile 是能力治理概念，不是逐条消息路由层
-
-一台 A-BOX 可以实现多个 Profile。
-
-例如：
-
-```text
-A-BOX
-├─ wing
-├─ refrigeration
-└─ weighing
-```
-
-Profile 用于定义命令、报告、版本和业务语义，但不要求每条请求或 Report 强制携带 Profile 标识。
-
----
-
-### 2.5 多实例按需表达
-
-如果一个 Profile 在同一 A-BOX 中仅存在单实例，不要求携带实例标识。
-
-如果一个 Profile 支持多实例，则：
-
-- 主动上报使用公共可选字段 `instanceId`；
-- 请求侧由该 Profile 在 `params` 中定义目标实例字段；
-- Profile 必须明确 `instanceId` 的格式、长度和唯一性范围。
-
----
-
-## 3. 公共 MQTT Topic
-
-V4 固定使用以下五个公共 Topic：
-
-| 方向 | 用途 | Topic |
-|---|---|---|
-| 平台 → A-BOX | 业务请求 | `/zxwl/abox/{deviceId}/request` |
-| A-BOX → 平台 | 请求响应 | `/zxwl/abox/{deviceId}/response` |
-| A-BOX → 平台 | 主动业务上报 | `/zxwl/abox/{deviceId}/report` |
-| A-BOX → 平台 | 心跳 | `/zxwl/abox/{deviceId}/heartbeat` |
-| A-BOX → 平台 | 能力清单 | `/zxwl/abox/{deviceId}/manifest` |
-
-平台可以使用通配符统一订阅：
-
-```text
-/zxwl/abox/+/response
-/zxwl/abox/+/report
-/zxwl/abox/+/heartbeat
-/zxwl/abox/+/manifest
-```
-
-具体业务 Profile 不得修改公共 Topic 结构。
-
----
-
-## 4. MQTT 会话策略
-
-公共业务控制通道不得依赖 Broker 离线队列实现控制命令补发。
-
-### 4.1 MQTT 3.1.1
-
-必须使用：
-
-```text
-Clean Session = true
-```
-
-### 4.2 MQTT 5.0
-
-A-BOX 公共业务 MQTT 客户端建立连接时必须同时使用：
-
-```text
-Clean Start = true
-Session Expiry Interval = 0
-```
-
-该要求只针对 **A-BOX 公共业务 MQTT 客户端**，目的是避免公共业务控制通道恢复旧会话或消费离线期间积压的控制请求。
-
-平台侧 MQTT 消费者、Broker Bridge、Kafka Connector 等服务端组件是否使用持久会话，由平台部署架构自行决定，不受本条强制。
-
-### 4.3 请求 Topic 禁止 Retain
-
-平台发布 `/request` 时：
-
-```text
-Retain = false
-```
-
-不得通过 Retained Request 表达任何控制意图。
-
-### 4.4 可恢复运维业务
-
-允许离线恢复的配置、诊断、日志和 OTA 等能力继续使用独立 `/internal/*` 运维协议，不与公共实时控制混用。
-
----
-
-## 5. MQTT QoS 与 Retain
-
-| 消息类型 | QoS | Retain |
-|---|---:|---:|
-| `/request` | 1 | 否 |
-| `/response` | 1 | 否 |
-| `/heartbeat` | 0 | 否 |
-| `/manifest` | 1 | 是 |
-| `state` Report | 1 | 否 |
-| `event` Report | 1 | 否 |
-| `telemetry` Report | 0 | 否 |
-
-规则：
-
-1. `state` 和 `event` 不得降为 QoS 0。
-2. `telemetry` 固定使用 QoS 0。
-3. 如果某项数据必须可靠投递，则应重新评估其语义是否实际属于 `state` 或 `event`，不得仅通过把 `telemetry` 提升到 QoS 1 规避分类。
-4. 平台订阅 `/report` 时必须请求 QoS 1，以避免 `state` 和 `event` 的实际交付 QoS 被订阅端降为 0。
-5. `/report` 统一不使用 Retain，状态恢复使用第 26～29 节定义的机制。
-
----
-
-## 6. 公共 JSON 外层
-
-所有 MQTT Payload：
-
-- 使用 UTF-8；
-- 使用 JSON；
-- 固定 Topic 段使用小写；
-- 外层固定包含 `version`、`timestamp`、`data`。
-
-基础结构：
+| 字段 | 类型 | 必填 | 定义 |
+|---|---|---|---|
+| `version` | String | 是 | 固定 `"4.0"` |
+| `timestamp` | Integer | 是 | 消息生成时间，UTC Unix Epoch 毫秒 |
+| `data` | Object | 是 | 对应消息内容 |
 
 ```json
 {
@@ -263,72 +109,45 @@ Retain = false
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `version` | String | 是 | 公共协议版本，V4 固定为 `"4.0"` |
-| `timestamp` | Integer | 是 | UTC Unix Epoch 毫秒 |
-| `data` | Object | 是 | 消息内容 |
+### 3.2 数值、扩展及非法报文
 
-### 6.1 Epoch 毫秒字段
+| 项目 | 规则 |
+|---|---|
+| 所有公共数字 | 仅允许 `-9007199254740991..9007199254740991` 的安全整数；小数、指数形式、负零、NaN、无穷值均非法 |
+| Epoch 毫秒 | `timestamp`、`expiresAt` 及未来 Epoch 字段具有 64 位整数语义；必须输出非负十进制整数，不接受字符串、小数、指数、前导 `+` 或负零；不得因浮点转换截断、舍入或输出科学计数法 |
+| 重复 JSON Key | 任意 Object 重复 Key 均非法，必须拒绝，不能选择其中一个值 |
+| 未知字段 | 必须忽略可安全忽略的扩展字段，不能仅因未知可选字段丢弃合法消息 |
+| 未知业务枚举 | 必须保留原值，可降级展示 `unknown`；不得解释为成功、完成、停止、关闭、正常或其他安全状态 |
 
-`timestamp`、`expiresAt` 以及未来新增的所有 Epoch 毫秒字段均具有 64 位整数语义。
+整数边界和非法词法向量见[规范性附录 A](#a1-v4-json-canonicalization)。
 
-必须以十进制整数原样输出，例如：
+### 3.3 长度与大小
 
-```json
-"timestamp": 1770186088333
-```
+| 项目 | 上限或格式 |
+|---|---|
+| 单条 MQTT Payload | 完整 UTF-8 JSON 最大 1024 字节，不含 Topic 和 MQTT 包头 |
+| `params` / `result` / `payload` | 各自序列化后最大 768 字节，仍受整包上限限制 |
+| `requestId` | 1～64 个 ASCII 字符，`^[A-Za-z0-9][A-Za-z0-9._:-]*$` |
+| `reportId` | 1～96 个 ASCII 字符，同上字符表达式 |
+| `streamId` | 1～64 个 ASCII 字符，同上字符表达式 |
+| `instanceId` | 1～32 个 ASCII 字符，`^[A-Za-z0-9_-]+$` |
+| `command` / `reportName` / Profile 名称 | 最长 64 个字符，小写 snake_case；命名规则见第 8 节 |
+| `firmware` | 最长 64 个 ASCII 字符 |
+| `msg` | 最长 128 个 UTF-8 字节，禁止控制字符 |
+| Manifest | 最多 16 个 Profile |
 
-不得输出：
+超限数据不得在公共 Topic 中自行分片；大文件、日志、固件使用 `/internal/*` 对应通道。
 
-```text
-1.770186088333e+12
-```
+## 4. Request、Response 与执行规则
 
-不得因 JSON 库内部浮点转换产生截断、舍入或科学计数法。
+### 4.1 Request.data Schema
 
-所有公共数字字段只允许 `-9007199254740991..9007199254740991` 范围内的整数。Epoch 毫秒字段必须是非负十进制整数，不接受字符串、小数、指数形式、前导 `+` 或负零。整数边界和非法词法测试向量见 `docs/protocols/v4/test-vectors.json`。
-
-### 6.2 重复 JSON Key
-
-任何 JSON Object 中出现重复 Key 均视为非法报文。
-
-例如：
-
-```json
-{
-  "requestId": "A",
-  "requestId": "B"
-}
-```
-
-必须拒绝，不得自行选择其中某一个值。
-
-### 6.3 未知字段
-
-接收方必须忽略当前版本中不认识但可安全忽略的扩展字段。
-
-不得仅因出现未知可选字段而丢弃整条合法消息。
-
-### 6.4 未知枚举
-
-接收方遇到未知业务枚举时：
-
-- 必须保留原始值；
-- 可以降级展示为 `unknown`；
-- 不得把未知值解释为成功、完成、停止、关闭、正常或任何其他安全状态。
-
----
-
-## 7. 平台请求
-
-Topic：
-
-```text
-/zxwl/abox/{deviceId}/request
-```
-
-示例：
+| 字段 | 类型 | 必填 | 定义 |
+|---|---|---|---|
+| `requestId` | String | 是 | 平台生成的全局唯一请求标识 |
+| `command` | String | 是 | 业务命令 |
+| `expiresAt` | Integer | 按操作类别 | UTC Epoch 毫秒失效时间 |
+| `params` | Object / null | 是 | 业务参数，无参数时显式 `null` |
 
 ```json
 {
@@ -345,338 +164,43 @@ Topic：
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `requestId` | String | 是 | 平台生成的全局唯一请求标识 |
-| `command` | String | 是 | 业务命令 |
-| `expiresAt` | Integer | 按操作类别 | UTC Unix Epoch 毫秒失效时间 |
-| `params` | Object / null | 是 | 业务参数，无参数时传 `null` |
+### 4.2 操作类别与重试
 
----
+每个可执行操作必须在执行前唯一确定类别。同一 command 的不同参数组合可分属不同类别，Profile 须按“命令 + 判定条件”分别登记；匹配规则见第 8 节。
 
-## 8. 可执行操作分类
-
-V4 不要求“每个 command 只能属于一个类别”。
-
-要求是：
-
-> 每个可执行操作必须在真正执行前唯一确定所属类别。
-
-如果同一个 `command` 的不同参数组合属于不同类别，Profile 必须按“命令 + 操作判定条件”分别登记。
-
-例如：
-
-| command | 操作判定 | category |
+| 类别 | 接受与安全规则 | 相同 requestId、相同内容的重试 |
 |---|---|---|
-| `wing_control` | `action=ascend` | `DISCRETE_ACTION` |
-| `wing_control` | `action=descend` | `DISCRETE_ACTION` |
-| `wing_control` | `action=stop` | `SAFETY_STOP` |
+| `QUERY` | 不应产生不可逆物理副作用；`expiresAt` 默认可选；`sync_state` 属于 QUERY | 允许重新执行及重新生成同步结果；新 Report 使用新 reportId，关联原 requestId |
+| `DISCRETE_ACTION` | expiresAt 必填；Profile 定义最大有效期；必须幂等，MQTT 重投不得重复动作，必须具备跨重启保护 | 不得重复动作；应返回首次完整响应；持久化异步最终结果的策略由 Profile 定义 |
+| `CONTINUOUS_SESSION` | 不得依靠持久化每条高频请求保障安全；Profile 至少定义等价的 sessionId、sequence、lease/timeout 机制；会话失效、断网、租约超时、序号异常进入规定安全状态；requestId 幂等不能替代这些机制 | 按 Profile 会话、序号、租约规则 |
+| `SAFETY_STOP` | 由 Profile 定义；应天然幂等，可有特殊过期规则，可重复执行或绕过普通 Busy；不得绕过认证、基本合法性及必要参数校验 | 按 Profile 安全规则，可允许重复执行 |
 
-V4 定义以下四种操作类别：
+离散动作 Profile 必须声明 `persistent_idempotency`、`session_constraint` 或等价安全方案。重启会丢失幂等记录时，必须至少采用持久保存 `requestId + 摘要 + 首次响应`、Profile 级启动会话约束，或经评审证明等价安全的机制。QUERY 重启后允许重做；安全停止按 Profile 规则。
 
-| 类别 | 标识 | 典型用途 |
-|---|---|---|
-| 查询 | `QUERY` | 查询状态、读取信息、`sync_state` |
-| 离散副作用动作 | `DISCRETE_ACTION` | 开门、开锁、单次升降等 |
-| 连续会话控制 | `CONTINUOUS_SESSION` | 底盘连续驾驶等 |
-| 安全停止 | `SAFETY_STOP` | stop、emergency stop |
+### 4.3 有效期与校验顺序
 
----
+1. `expiresAt` 是最晚允许开始接受执行的时刻；接受后的持续时间由 Profile 超时、租约或安全规则决定。
+2. 每个要求 expiresAt 的操作必须定义 `maxValidity`；离散动作不得超过 30 秒，Profile 只能更短。
+3. 原始有效期须满足 `0 < expiresAt - request.timestamp <= maxValidity`。先比较大小再相减，避免无符号下溢。不满足返回 `4001`，既有 Profile 明定的响应码例外仍有效。
+4. 新请求在可信当前 UTC 满足 `currentTime >= expiresAt` 时返回 `4005` 并拒绝执行；不得以 `expiresAt - currentTime` 判断原始最大有效期。
+5. `timestamp` 用于生成时间、审计、排序及原始有效期，不是严格时钟一致性门禁；重试应保留原始 timestamp 和 expiresAt。
+6. 依赖 expiresAt 的新请求必须使用可信时间；未同步、过久未校时或估计误差不能确认尚未到期时返回 `4003`，不得静默忽略有效期。
+7. 合法重复请求先检查身份冲突并返回已保存结果；已接受请求的重复投递不得因当前过期或授时不可用而重做或改变已保存结果。
 
-## 9. QUERY
+### 4.4 请求一致性与保护窗口
 
-查询类操作：
+逻辑内容由 `command + 规范化 params + 存在时的 expiresAt` 决定，外层 timestamp 不参与。不得按原始 JSON 字符串、Object 顺序或无意义空白判断相等。摘要对象、规范化及固定 SHA-256 算法见附录 A。
 
-- 不应产生不可逆物理副作用；
-- 相同 `requestId`、相同请求内容重试时允许重新执行；
-- 可以重新生成同步结果；
-- 如果会产生 Report，则重试时生成新的 `reportId`；
-- `expiresAt` 默认可选。
+相同 requestId 的逻辑内容任一不同，返回 `4006`，拒绝新执行，不得覆盖原结果。有 expiresAt 的离散动作幂等记录至少应保留至 **expiresAt + 10 分钟**（固定保护窗口）。
 
-`sync_state` 属于 `QUERY`。
+### 4.5 Response.data Schema 与成功边界
 
----
-
-## 10. DISCRETE_ACTION
-
-离散副作用动作例如：
-
-```text
-open_locker
-wing_control(action=ascend)
-wing_control(action=descend)
-```
-
-此类操作必须：
-
-1. 携带 `expiresAt`；
-2. 由 Profile 定义最大允许有效期；
-3. 实现 `requestId` 幂等；
-4. 同一请求不得因 MQTT 重投重复执行；
-5. 必须处理 A-BOX 重启导致 RAM 幂等记录丢失的问题。
-
-Profile 必须声明其跨重启保护机制：
-
-```text
-persistent_idempotency
-```
-
-或：
-
-```text
-session_constraint
-```
-
-或其他具有等价安全性的方案。
-
----
-
-## 11. CONTINUOUS_SESSION
-
-连续会话控制不得依赖持久化每条高频请求实现安全。
-
-对应 Profile 必须定义至少具有以下等价能力的机制：
-
-```text
-sessionId
-sequence
-lease / timeout
-```
-
-设备必须能够在：
-
-- 会话失效；
-- 网络断开；
-- 租约超时；
-- 控制序号异常；
-
-等情况下进入 Profile 规定的安全状态。
-
-公共 `requestId` 幂等不能替代连续会话控制自身的实时安全机制。
-
----
-
-## 12. SAFETY_STOP
-
-安全停止类操作由 Profile 明确定义。
-
-原则上：
-
-- 应设计为天然幂等；
-- 可定义不同于普通动作的过期规则；
-- 可允许重复执行；
-- 可以定义绕过普通业务 Busy 状态；
-- 不得绕过身份认证、基本报文合法性和必要参数校验。
-
----
-
-## 13. 请求过期
-
-对于要求 `expiresAt` 的操作：
-
-```text
-currentTime >= expiresAt
-```
-
-时，该请求已经过期。
-
-A-BOX 必须拒绝执行，并返回：
-
-```text
-4005 REQUEST_EXPIRED
-```
-
-规则：
-
-1. `expiresAt` 表示请求最晚允许开始接受执行的时刻。
-2. 动作一旦被接受后允许持续多久，由业务 Profile 的超时、租约或安全状态机决定。
-3. 每个要求 `expiresAt` 的可执行操作必须定义 `maxValidity`。
-   `DISCRETE_ACTION` 的 `maxValidity` 不得超过 30 秒，Profile 只能定义更短值。
-4. 请求申请的原始有效期必须满足：
-
-```text
-0 < expiresAt - request.timestamp <= maxValidity
-```
-
-5. 原始有效期不满足上述条件时返回 `4001 INVALID_REQUEST`，既有 Profile 明确规定的响应码例外保持有效。必须先比较大小再相减，避免无符号整数下溢。
-6. 设备可信当前 UTC 满足 `currentTime >= expiresAt` 时，新请求返回 `4005 REQUEST_EXPIRED`。不得使用 `expiresAt - currentTime` 判断原始最大有效期。
-7. `timestamp` 用于消息生成时间、审计、排序和原始有效期计算，不作为严格的设备与平台时钟一致性门禁。重试应保留原始 `timestamp` 和 `expiresAt`。
-8. 依赖 `expiresAt` 的新请求必须使用可信时间。时间未同步、过久未校时，或估计误差导致无法确认尚未到期时，返回 `4003`，不得静默忽略有效期。
-9. 合法重复请求先按请求身份检查冲突并返回已保存结果；已接受请求的重复投递不得因当前时间已过期或当前授时不可用而重新执行或改变已保存结果。
-
----
-
-## 14. 请求幂等与重试
-
-### 14.1 请求内容相等规则
-
-逻辑请求内容由：
-
-```text
-command
-+ 规范化后的 params
-+ expiresAt
-```
-
-决定。
-
-外层：
-
-```text
-timestamp
-```
-
-不参与请求内容一致性判断。
-
-不得基于：
-
-- 原始 JSON 字符串；
-- Object 字段顺序；
-- 无意义空白；
-
-判断两个请求是否相同。
-
-### 14.1.1 请求摘要规范化
-
-需要持久化或计算请求摘要时，必须对以下逻辑对象使用与 Manifest 相同基础规则的 **V4 JSON Canonicalization**：
-
-```json
-{
-  "command": "...",
-  "params": null,
-  "expiresAt": 1770186093333
-}
-```
-
-规则：
-
-1. `command` 必须参与摘要。
-2. `params` 必须参与摘要。
-3. 如果该请求携带 `expiresAt`，则 `expiresAt` 必须参与摘要。
-4. 如果该操作不使用 `expiresAt`，规范化逻辑对象中必须省略 `expiresAt`，不得自行补 `null`。
-5. `params` 是公共请求必填字段，因此“缺少 params”属于非法请求；`params: null` 与 `params: {}` 不等价。
-6. JSON Object 字段顺序不影响摘要。
-7. JSON Array 顺序默认具有业务意义，必须保持原顺序；只有具体 Profile 明确声明某个数组为集合语义时，才允许在业务层先进行集合规范化。
-8. 字符串比较基于解码后的 Unicode 字符值，并使用统一 UTF-8 Canonicalization。
-9. V4 公共数字值只允许安全整数；小数、指数形式、负零、`NaN` 和无穷值均非法。
-10. 重复 JSON Key 已由第 6.2 节禁止，不得进入 Canonicalization。
-
-例如：
-
-```json
-{"a":1,"b":2}
-```
-
-与：
-
-```json
-{"b":2,"a":1}
-```
-
-在 Object 值语义相同的前提下必须产生相同 Canonical Bytes。
-
-但：
-
-```json
-[1,2]
-```
-
-与：
-
-```json
-[2,1]
-```
-
-默认视为不同值。
-
-跨嵌入式与平台实现必须使用 `docs/protocols/v4/test-vectors.json` 中一致的请求摘要测试向量：
-
-```text
-Request Logical Object
-→ Canonical Bytes
-→ Request Digest
-```
-
-Request Digest 固定为规范字节的 SHA-256，以 64 位小写十六进制表达；实现方不得选择其他算法。
-
-### 14.2 requestId 冲突
-
-如果相同 `requestId` 对应不同逻辑请求内容：
-
-```text
-command / params / expiresAt
-```
-
-任一不同，则返回：
-
-```text
-4006 REQUEST_ID_CONFLICT
-```
-
-并拒绝执行新请求。
-
-### 14.3 QUERY 重试
-
-相同 `requestId` 且请求内容相同：
-
-- 允许重新执行；
-- 可以重新生成查询结果；
-- 如果触发新的 Report，则新的 Report 必须生成新的 `reportId`；
-- 与原请求相关的 Report 继续携带同一个 `requestId`。
-
-### 14.4 DISCRETE_ACTION 重试
-
-相同 `requestId` 且请求内容相同：
-
-- 不得重复执行业务动作；
-- 应返回首次执行生成的完整响应；
-- 如果业务需要持久化异步最终结果，具体策略由 Profile 定义。
-
-### 14.5 CONTINUOUS_SESSION 重试
-
-按对应 Profile 的会话、序号、租约规则处理。
-
-### 14.6 SAFETY_STOP 重试
-
-按对应 Profile 定义的安全规则处理，可以允许重复执行。
-
----
-
-## 15. 幂等记录保存与跨重启
-
-### 15.1 去重记录保存
-
-有 `expiresAt` 的离散动作请求，其幂等记录至少应保留至：
-
-```text
-expiresAt + 幂等保护窗口
-```
-
-幂等保护窗口固定为 10 分钟。
-
-### 15.2 跨重启
-
-如果设备重启会导致 RAM 幂等记录丢失，则 `DISCRETE_ACTION` 必须至少采用一种：
-
-1. 持久化 `requestId + 请求摘要 + 首次响应`；
-2. 为动作请求增加 Profile 级启动会话约束；
-3. 其他经评审证明具有等价安全性的机制。
-
-查询类请求允许重启后重新执行。
-
-安全停止类按 Profile 规则处理。
-
----
-
-## 16. A-BOX 请求响应
-
-Topic：
-
-```text
-/zxwl/abox/{deviceId}/response
-```
-
-基础响应：
+| 字段 | 类型 | 必填 | 定义 |
+|---|---|---|---|
+| `requestId` | String | 是 | 原请求标识 |
+| `code` | Integer | 是 | 请求处理结果 |
+| `msg` | String | 是 | 展示与诊断文本 |
+| `result` | Object | 否 | 同步结构化结果；无结果时省略，不发送 `null` |
 
 ```json
 {
@@ -690,89 +214,47 @@ Topic：
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `requestId` | String | 是 | 原请求 `requestId` |
-| `code` | Integer | 是 | 请求处理结果 |
-| `msg` | String | 是 | 展示与诊断文本 |
-| `result` | Object | 否 | 同步结构化结果 |
+`200` 表示达到 Profile 对当前操作定义的成功边界，不统一表示机械完成。Profile 必须为每个操作精确登记：例如 wing ascend 可表示接受并进入执行流程，而 open_locker 表示所有目标反馈打开。
 
-无同步结构化结果时省略 `result`，不发送无意义的：
-
-```json
-"result": null
-```
-
----
-
-## 17. 200 成功边界
-
-公共协议不统一定义：
-
-```text
-200 = 机械动作已经完成
-```
-
-`200` 只表示：
-
-> 请求达到对应 Profile 对当前可执行操作明确定义的成功边界。
-
-例如：
-
-```text
-wing_control(action=ascend)
-200 = A-BOX 已接受并进入该动作执行流程
-```
-
-而：
-
-```text
-open_locker
-200 = 所有目标格口已经反馈确认打开
-```
-
-每个 Profile 必须为每一个可执行操作明确登记 `code=200` 的准确含义。
-
----
-
-## 18. 公共响应码
+### 4.6 公共响应码与异常响应
 
 | code | 名称 | 含义 |
 |---:|---|---|
-| `200` | `SUCCESS` | 达到 Profile 对当前操作定义的成功边界 |
-| `400` | `BUSINESS_FAILED` | Profile 明确定义的业务执行失败 |
+| `200` | `SUCCESS` | 达到 Profile 成功边界 |
+| `400` | `BUSINESS_FAILED` | Profile 明定的业务执行失败 |
 | `4001` | `INVALID_REQUEST` | JSON 结构、必填字段、参数、枚举等非法 |
-| `4002` | `UNSUPPORTED_COMMAND` | 不支持该 `command` 或可执行操作 |
-| `4003` | `BUSY` | 当前业务繁忙、存在互斥操作或时间敏感请求的可信时间不可用 |
-| `4004` | `RESERVED` | V4 公共协议保留 |
+| `4002` | `UNSUPPORTED_COMMAND` | 不支持 command 或可执行操作 |
+| `4003` | `BUSY` | 业务繁忙、互斥操作或时间敏感请求的可信时间不可用 |
+| `4004` | `RESERVED` | 公共保留 |
 | `4005` | `REQUEST_EXPIRED` | 请求已过期 |
-| `4006` | `REQUEST_ID_CONFLICT` | 相同 requestId 对应不同逻辑请求内容 |
+| `4006` | `REQUEST_ID_CONFLICT` | 相同 requestId 对应不同逻辑内容 |
 | `500` | `MESSAGE_TOO_LARGE` | 无法在单包上限内生成完整响应 |
 | `5001` | `INTERNAL_ERROR` | A-BOX 内部异常 |
 
-业务 Profile 可以定义专用响应码，且只能在对应 Profile 内解释。
+Profile 专用码只能在该 Profile 内解释。Payload 无法解析、存在重复 Key，或缺少合法、唯一、可信 requestId 时，设备可直接丢弃并记录诊断，不要求生成无法可靠关联的 Response。
 
-### 18.1 无法生成可关联响应的非法请求
+## 5. Report、去重、实例与顺序
 
-如果 Payload：
+### 5.1 Report.data Schema
 
-- 无法解析为合法 JSON；
-- 存在重复 JSON Key；
-- 缺少合法、唯一、可信的 `requestId`；
+| 字段 | 类型 | 必填 | 定义 |
+|---|---|---|---|
+| `reportId` | String | 是 | 本次逻辑报告唯一标识 |
+| `reportType` | String | 是 | state / event / telemetry |
+| `reportName` | String | 是 | 业务上报名称 |
+| `instanceId` | String | 多实例时 | 业务实例 |
+| `streamId` | String | 严格有序流时 | 流标识，与 sequence 成对 |
+| `sequence` | Integer | 严格有序流时 | 流内序号，与 streamId 成对 |
+| `requestId` | String | 关联请求时 | 请求的异步后续 Report 必须携带原标识 |
+| `payload` | Object / null | 是 | 业务数据；完成、失败、停止语义由 Profile 定义；公共层不定义统一 executionState |
 
-则设备可以直接丢弃该请求并记录诊断，不要求生成无法可靠关联的 `/response`。
+| reportType | 语义 |
+|---|---|
+| `state` | 当前业务状态或完整状态快照 |
+| `event` | 一次离散业务事件 |
+| `telemetry` | 连续、高频、允许少量丢失的数据 |
 
----
-
-## 19. 主动业务上报
-
-Topic：
-
-```text
-/zxwl/abox/{deviceId}/report
-```
-
-通用结构：
+Profile 不得增加 reportType；新业务语义使用新 reportName。QoS/Retain 只在第 2.1 节定义。
 
 ```json
 {
@@ -789,145 +271,6 @@ Topic：
   }
 }
 ```
-
----
-
-## 20. Report 公共字段
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `reportId` | String | 是 | 本次逻辑报告唯一标识 |
-| `reportType` | String | 是 | `state` / `event` / `telemetry` |
-| `reportName` | String | 是 | 具体业务上报名称 |
-| `instanceId` | String | 否 | 多实例 Profile 使用 |
-| `streamId` | String | 条件必填 | 严格有序流使用 |
-| `sequence` | Integer | 条件必填 | 严格有序流使用 |
-| `requestId` | String | 否 | 与某次请求相关时使用 |
-| `payload` | Object / null | 是 | 业务数据 |
-
----
-
-## 21. reportId
-
-`reportId` 用于逻辑 Report 去重。
-
-规则：
-
-1. 相同逻辑 Report 因 QoS 重投时，`reportId` 必须保持不变。
-2. 新生成的 Report 必须使用新的 `reportId`。
-3. 同一 `deviceId` 在平台规定的 Report 去重保留期内不得复用相同 `reportId`。
-4. 平台按：
-
-```text
-deviceId + reportId
-```
-
-进行去重。
-
-平台 Report 去重保留期固定为 24 小时。`reportId` 长度和字符集见第 45 节；默认生成方式为 RFC 9562 UUIDv4。资源受限设备可以使用其他生成方式，但必须在 `deviceId` 范围内满足 24 小时不复用的唯一性要求。
-
----
-
-## 22. reportType
-
-V4 固定定义三类：
-
-### 22.1 state
-
-表示当前业务状态或完整状态快照。
-
-```text
-QoS = 1
-Retain = false
-```
-
-### 22.2 event
-
-表示一次离散业务事件。
-
-```text
-QoS = 1
-Retain = false
-```
-
-### 22.3 telemetry
-
-表示连续、高频、允许少量丢失的数据。
-
-```text
-QoS = 0
-Retain = false
-```
-
-具体 Profile 不得自行增加新的 `reportType`。
-
-新增业务语义应通过新的 `reportName` 表达。
-
----
-
-## 23. instanceId
-
-如果某 Profile 在同一 A-BOX 中存在多个同类实例，则相关 Report 必须携带 `instanceId`。
-
-Profile 必须定义：
-
-- 是否支持多实例；
-- `instanceId` 是否必填；
-- 允许字符；
-- 最大长度；
-- 唯一性范围；
-- 请求侧如何在 `params` 中指定同一实例。
-
-平台最新状态主键统一为：
-
-```text
-deviceId + reportName + instanceId
-```
-
-单实例 Profile 的 `instanceId` 使用固定逻辑空值。
-
-如果 Profile 在 Manifest 中声明了 `instances`，则 Report 中的 `instanceId` 必须属于当前已确认 Manifest 的实例集合。平台收到未声明实例的 Report 时应保存原始消息并标记能力配置不一致，不得自动把该实例加入当前 Manifest。
-
----
-
-## 24. 严格有序流
-
-普通 Report 不要求顺序号。
-
-仅需要严格顺序的 Profile 使用：
-
-```text
-streamId + sequence
-```
-
-规则：
-
-1. `streamId` 和 `sequence` 必须同时出现或同时不存在。
-2. `sequence` 使用 `uint32`。
-3. `sequence` 必须从 `1` 开始递增。
-4. 在 `uint32` 回绕之前必须更换 `streamId`。
-5. A-BOX 重启或流重新初始化时必须生成新的 `streamId`。
-6. 平台只允许在相同：
-
-```text
-deviceId + reportName + instanceId + streamId
-```
-
-范围内比较 `sequence`。
-
-不同 `streamId` 的 `sequence` 不得直接比较新旧。
-
----
-
-## 25. 与请求关联的异步 Report
-
-如果某条 Report 是某次平台请求的异步后续结果，必须携带原：
-
-```text
-requestId
-```
-
-示例：
 
 ```json
 {
@@ -946,48 +289,38 @@ requestId
 }
 ```
 
-完成、失败、停止等具体结果语义由 Profile 在 `payload` 中定义。
+### 5.2 reportId 与去重
 
-公共协议不定义统一 `executionState`。
+新逻辑 Report 必须使用新 reportId；同一报告 QoS 重投保持原 ID。同 deviceId 在平台固定 **24 小时**去重保留期内不得复用 ID；平台按 `deviceId + reportId` 去重。默认生成 RFC 9562 UUIDv4；资源受限设备可使用其他方式，但仍须满足该唯一性要求。
 
----
+### 5.3 instanceId 与状态主键
 
-## 26. 状态恢复原则
+同设备存在同类多实例时，相关 Report 必须带 instanceId。Profile 须定义多实例支持、必填性、字符、最大长度、唯一性范围及请求目标字段，且服从第 3.3 节公共上限。
 
-由于公共 `/report` 不使用 Retain，V4 同时规定以下三层状态恢复机制：
+平台最新 state 主键固定为 `deviceId + reportName + instanceId`；单实例使用固定逻辑空值。Manifest 声明 instances 时，Report 实例必须属于当前已确认集合；未声明实例的消息应保存原始报文并标记能力配置不一致，不能自动加入 Manifest。
 
-1. A-BOX 启动完成后主动补发完整状态；
-2. MQTT 重新连接成功后主动补发完整状态；
-3. 平台持久保存最新状态，并可主动执行公共 `sync_state`。
+### 5.4 严格有序流
 
----
+普通 Report 不要求序号；需严格顺序的 Profile 使用 streamId + sequence：
 
-## 27. Profile 完整状态
+1. 两字段同时出现或同时不存在；sequence 为 uint32，从 1 递增。
+2. uint32 回绕前更换 streamId；重启或流重新初始化必须生成新 streamId。
+3. 仅在相同 `deviceId + reportName + instanceId + streamId` 内比较 sequence；不同 streamId 序号不能直接比较新旧。
 
-每个具备状态的 Profile 必须明确登记其完整状态 `reportName`。
+## 6. 完整状态与 sync_state
 
-完整状态必须能够在不依赖历史消息的情况下，让平台重新建立该 Profile 当前可观察状态。
+### 6.1 完整状态及自动补发
 
-例如：
+每个有状态 Profile 必须登记完整状态 reportName；完整状态须无需历史消息即可重建当前可观察状态。设备启动完成且业务获得可靠状态后，以及 MQTT 重连后，必须补发全部当前启用 Profile 的完整状态；自动补发省略 requestId。平台持久保存最新状态并可发起 sync_state。
 
-```text
-wing -> wing_status
-refrigeration -> refrigeration_status
-locker -> locker_status
-```
+### 6.2 Core sync_state
 
----
-
-## 28. 公共 sync_state 命令
-
-V4 Core 定义：
-
-```text
-command = sync_state
-category = QUERY
-```
-
-请求：
+| 项目 | 定义 |
+|---|---|
+| command / category | `sync_state` / `QUERY`，Core 保留命令 |
+| params | `null` |
+| `200` | 已接受并安排同步，不代表 Report 全部发布、Broker 或后续平台链路收到并处理 |
+| result.expectedStates | 本轮权威预期状态集合 |
 
 ```json
 {
@@ -1000,8 +333,6 @@ category = QUERY
   }
 }
 ```
-
-响应：
 
 ```json
 {
@@ -1030,142 +361,30 @@ category = QUERY
 }
 ```
 
-`200` 仅表示：
+### 6.3 expectedStates 与完成判定
 
-> A-BOX 已接受并安排本轮状态同步。
+1. 条目必须有 reportName；单实例不得带 instanceId，多实例必须带；`(reportName, instanceId)` 组合不得重复。
+2. 首次处理某 requestId 时确定集合；相同逻辑请求重试不得改变它。平台不得按 Manifest Profile 数量猜测待收状态数。
+3. 本轮全部完整状态 Report 必须带原 requestId；平台按 requestId + expectedStates 判断收齐。
+4. 同 requestId、同状态键可因重试有多个完整快照，每条新快照使用新 reportId；平台应以**最后接收到的完整状态快照**作为本轮该键结果。
 
-不表示：
+### 6.4 重试、乱序与超时
 
-- Report 已全部发布；
-- Broker 已全部收到；
-- Kafka 已全部收到；
-- 平台业务逻辑已完成处理。
+| 情况 | 必需处理 |
+|---|---|
+| 同 requestId、同内容重试 | 沿用首次 expectedStates，重新发送集合中完整状态；新 Report 用新 reportId 并关联原 requestId；不得因当前 Manifest/能力变化改变集合 |
+| 同步中 Manifest 变化 | 平台必须废弃未完成旧轮次，等待新 Manifest 在线确认后以新 requestId 同步；设备建立新集合 |
+| Report 先于 Response 到达 | 平台应按 requestId 临时缓存完整状态，收到响应后按 expectedStates 匹配；不得仅因响应晚到丢弃合法结果 |
+| 等待超时 | 从收到成功响应起固定 15 秒；仅代表未收齐，不能推断设备离线、故障、停止、关闭、正常或其他确定状态；可保留旧持久状态，标为不完整或未知新鲜度 |
 
-### 28.1 expectedStates
+## 7. Heartbeat、Manifest 与能力确认
 
-`result.expectedStates` 是本轮状态同步的权威预期集合。
+### 7.1 Heartbeat.data Schema
 
-规则：
-
-1. 每个条目必须包含 `reportName`。
-2. 单实例状态条目不得携带 `instanceId`。
-3. 多实例状态条目必须携带 `instanceId`。
-4. `expectedStates` 中 `(reportName, instanceId)` 组合必须唯一，不得重复。
-5. 平台不得仅根据 Manifest Profile 数量推测本轮应等待多少状态。
-6. A-BOX 第一次处理某个 `sync_state.requestId` 时确定该请求对应的 `expectedStates`；在该逻辑同步请求的后续相同 `requestId` 重试中不得改变此集合。
-
-### 28.2 sync_state 触发的 Report
-
-本次 `sync_state` 触发的所有完整状态 Report 必须携带该次：
-
-```text
-requestId
-```
-
-平台根据：
-
-```text
-requestId + expectedStates
-```
-
-判断本轮同步是否完整。
-
-同一 `requestId` 下，同一个状态键：
-
-```text
-reportName + instanceId
-```
-
-可以因 `sync_state` 重试收到多条完整状态 Report。
-
-这些 Report 必须使用不同的 `reportId`。平台应以**最后接收到的完整状态快照**作为本轮该状态键的结果。
-
-### 28.3 sync_state 重试
-
-如果平台使用相同 `requestId`、相同请求内容重试 `sync_state`：
-
-- A-BOX 必须沿用该 `requestId` 首次确定的 `expectedStates`；
-- A-BOX 重新发送 `expectedStates` 中对应的完整状态；
-- 新生成的每条 Report 必须使用新的 `reportId`；
-- 新生成的 Report 继续携带相同 `requestId`；
-- 不得因为当前 Manifest 或运行时能力发生变化而修改同一 `requestId` 对应的 `expectedStates`。
-
-如果 Manifest 在同步过程中发生变化：
-
-- 平台必须废弃尚未完成的旧同步轮次；
-- 等待新 Manifest 完成在线确认；
-- 使用新的 `requestId` 发起新的 `sync_state`；
-- A-BOX 以新请求建立新的 `expectedStates`。
-
-### 28.4 Report 早于 sync_state 响应到达
-
-由于 MQTT Bridge、Kafka 或平台内部链路可能改变不同 Topic 消息的到达先后，平台可能先收到携带某个 `requestId` 的状态 Report，之后才收到对应 `sync_state` 响应。
-
-平台应：
-
-- 按 `requestId` 临时缓存提前到达的完整状态 Report；
-- 收到 `sync_state` 响应后，根据 `expectedStates` 对缓存 Report 进行匹配；
-- 不得仅因为响应晚于 Report 到达而丢弃合法同步结果。
-
-### 28.5 sync_state 等待超时
-
-平台从收到成功响应开始等待本次 `sync_state` 的完整状态，固定超时为 15 秒。
-
-同步超时只表示：
-
-> 本轮状态同步未完整收齐预期状态。
-
-同步超时不得直接把未收到的业务状态解释为：
-
-- 业务设备离线；
-- 设备故障；
-- 已停止；
-- 已关闭；
-- 正常；
-- 其他确定性业务状态。
-
-平台可以保留此前持久化状态，并将本轮同步结果标记为“不完整”或“未知新鲜度”。
-
----
-
-## 29. A-BOX 自动状态补发
-
-A-BOX 在以下场景必须主动补发所有当前已启用 Profile 的完整状态：
-
-1. A-BOX 启动完成，业务模块已经获得可靠状态；
-2. MQTT 连接重新建立后。
-
-此类自动补发没有平台请求，因此：
-
-```text
-requestId
-```
-
-省略。
-
----
-
-## 30. 心跳
-
-Topic：
-
-```text
-/zxwl/abox/{deviceId}/heartbeat
-```
-
-QoS：
-
-```text
-0
-```
-
-Retain：
-
-```text
-false
-```
-
-基础示例：
+| 字段 | 类型 | 必填 | 定义 |
+|---|---|---|---|
+| `firmware` | String | 是 | 当前固件版本字符串 |
+| `manifestId` | String | 条件必填 | 第 7.3 节要求绑定能力时回显 |
 
 ```json
 {
@@ -1177,106 +396,22 @@ false
 }
 ```
 
-如果当前产品要求通过 `manifestId` 绑定在线实例与能力清单，则：
+使用 manifestId 的心跳在 data 中增加 `"manifestId":"sha256:..."`。完整能力清单不得放入心跳；心跳只证明 A-BOX 与 Broker 通信存活，不证明业务设备、总线或整车安全可用，业务状态通过 Report 表达。
 
-```json
-{
-  "version": "4.0",
-  "timestamp": 1770186088333,
-  "data": {
-    "firmware": "abox-4.0.0",
-    "manifestId": "sha256:..."
-  }
-}
-```
+心跳周期固定 **5 秒**，连续 **15 秒**未收到即离线，不允许 Profile/项目改写或主动增加协议级随机抖动。网络、调度少量抖动不改变离线边界。在线判定依据实际收到心跳的时间，不能用设备 timestamp；平台处理以 Broker 接收时间为准。
 
-完整能力清单不得放入心跳。
+### 7.2 Manifest.data Schema
 
----
+Manifest 用于核对实际能力、Profile 版本、资产台账及升级/配置后的能力变化。
 
-## 31. 心跳语义
-
-心跳只证明：
-
-> 当前 A-BOX 与 MQTT Broker 之间的通信处于存活状态。
-
-心跳不证明：
-
-- 飞翼控制器正常；
-- 冷机正常；
-- 格口设备正常；
-- 底盘可控；
-- CAN 正常；
-- RS485 正常；
-- 整车业务功能处于安全可用状态。
-
-具体业务设备状态必须通过 `/report` 表达。
-
-### 31.1 平台动作下发前置条件
-
-平台只应向同时满足以下条件的 A-BOX 下发 `DISCRETE_ACTION`、`CONTINUOUS_SESSION` 等动作类请求：
-
-1. 当前心跳判定为在线；
-2. 当前在线实例的 Manifest 已完成确认；
-3. 已确认 Manifest 声明支持目标 Profile；
-4. 平台支持该 Profile 的当前 MAJOR 版本；
-5. 所使用的具体操作在设备声明的 Profile 版本能力范围内。
-
-该检查不能消除“平台判断在线后、实际发布前设备立即掉线”的网络竞态，因此设备端仍必须执行 `expiresAt`、幂等、租约和 Profile 安全状态机等保护。
-
----
-
-## 32. 心跳周期与离线判定
-
-固定值：
-
-```text
-heartbeatInterval = 5s
-offlineTimeout = 15s
-```
-
-平台在线判定必须依据实际收到心跳的时间。
-
-不得使用设备 `timestamp` 替代平台接收时间。
-
-心跳周期不得由 Profile 或项目改写。设备不主动为 5 秒周期增加协议级随机抖动；网络和调度造成的少量发送抖动不改变平台连续 15 秒未收到心跳即离线的判定。
-
----
-
-## 33. Manifest
-
-Topic：
-
-```text
-/zxwl/abox/{deviceId}/manifest
-```
-
-QoS：
-
-```text
-1
-```
-
-Retain：
-
-```text
-true
-```
-
-Manifest 用于：
-
-- 核对设备实际业务能力；
-- 核对 Profile 版本；
-- 检查资产台账和设备实际能力是否一致；
-- 固件升级或配置变化后识别能力变化。
-
-Manifest 不参与逐条业务请求或 Report 路由。
-
----
-
-## 34. Manifest 结构
-
-示例：
+| 字段 | 类型 | 必填 | 定义 |
+|---|---|---|---|
+| `manifestId` | String | 条件必填 | 规范化内容摘要，见第 7.3 节及附录 A |
+| `firmware` | String | 是 | 当前固件版本 |
+| `profiles` | Array | 是 | 当前实际启用能力 |
+| `profiles[].name` | String | 是 | Profile 名称，集合内必须唯一 |
+| `profiles[].version` | String | 是 | MAJOR.MINOR |
+| `profiles[].instances` | Array&lt;String&gt; | 多实例时 | 完整实例集合，标识唯一；单实例必须省略 |
 
 ```json
 {
@@ -1289,7 +424,10 @@ Manifest 不参与逐条业务请求或 Report 路由。
       {
         "name": "refrigeration",
         "version": "1.2",
-        "instances": ["1", "2"]
+        "instances": [
+          "1",
+          "2"
+        ]
       },
       {
         "name": "wing",
@@ -1300,666 +438,117 @@ Manifest 不参与逐条业务请求或 Report 路由。
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| `manifestId` | String | 条件必填 | 规范化 Manifest 内容摘要 |
-| `firmware` | String | 是 | 当前 A-BOX 固件版本 |
-| `profiles` | Array | 是 | 当前实际启用的 Profile |
-| `profiles[].name` | String | 是 | Profile 名称 |
-| `profiles[].version` | String | 是 | Profile 版本，格式为 `MAJOR.MINOR` |
-| `profiles[].instances` | Array&lt;String&gt; | 条件必填 | 多实例 Profile 的完整实例集合 |
+instances 只声明能力配置，不是逐消息路由。Report 实例来自当前集合；增加、删除、改名必须重新发布 Manifest 并产生新 manifestId。
 
-Manifest 中：
+### 7.3 摘要要求、发布与在线确认
 
-- `profiles[].name` 必须唯一，不得重复声明同名 Profile；
-- 单实例 Profile 必须省略 `instances`；
-- 多实例 Profile 必须声明完整 `instances`；
-- 同一 Profile 的 `instances` 内实例标识必须唯一；
-- `instances` 不是逐条消息路由模型，只用于能力与实例配置声明；
-- 多实例 Profile 的 `instanceId` 必须来自 Manifest 当前声明的实例集合；
-- 实例集合发生增加、删除或标识变化时，必须重新发布 Manifest；
-- 实例集合变化属于 Manifest 内容变化，因此必须产生新的 `manifestId`。
+若同 firmware 因配置、装配、参数或项目差异可能对应不同 Profile 集合、版本或 instances，manifestId **必须存在并由心跳回显**。仅在同 firmware 唯一决定全部集合及版本时才可省略。摘要规则见附录 A。
 
----
+设备必须在连接建立、固件版本变化、Profile 集合/版本变化、影响能力的配置变化后发布 Manifest。Retained Manifest 只代表最近声明，不证明当前在线。
 
-## 35. Profile 版本
+| 模式 | 当前在线实例能力确认条件 |
+|---|---|
+| 带 manifestId | 当前在线心跳与 Retained Manifest 的 manifestId 相同 |
+| 省略 manifestId | 满足 firmware 唯一决定能力的前提，且当前在线心跳 firmware 与 Retained Manifest 完全一致 |
 
-Profile 版本统一使用：
+确认前不得标记能力为当前在线实例已确认可用。只有收到报文版本 4.0 的当前在线心跳并确认 Manifest 才允许下发动作；版本或能力不明确时不得下发。
 
-```text
-MAJOR.MINOR
-```
+平台只应向同时满足“心跳在线、Manifest 已确认、支持目标 Profile、平台支持该 MAJOR、具体操作在设备版本能力内”的设备发动作。该检查不能消除发布前掉线竞态；设备仍必须执行有效期、幂等、租约及 Profile 安全保护。
 
-例如：
+### 7.4 Profile 版本兼容
 
-```text
-1.0
-1.1
-2.0
-```
+MAJOR、MINOR 均为 `0..65535` 的 uint16 十进制数，无前导零，格式 MAJOR.MINOR。
 
-`MAJOR` 和 `MINOR` 都是 `uint16` 十进制数，不得使用前导零；允许范围为 `0..65535`。
+| 变化或组合 | 规则 |
+|---|---|
+| MAJOR 变化 | 不兼容变化：修改字段语义/必填字段、删除能力、修改成功边界或 Report 基本语义 |
+| MINOR 变化 | 只允许兼容扩展：新增 command/reportName、可忽略可选字段、专用响应码 |
+| 平台不支持 MAJOR | 不得发动作；可保存未知 Report 原始数据，不得确认可控 |
+| 相同 MAJOR，设备 MINOR 较高 | 使用已知兼容子集，忽略未知兼容扩展 |
+| 设备 MINOR 较低 | 不得使用更高 MINOR 引入的能力 |
 
-规则：
+## 8. Registry 与 Profile 登记要求
 
-### 35.1 MAJOR
+Command、ReportName、Profile 以机器可校验 Registry 为唯一登记入口。全平台必须维护稳定的三类 Registry；公共 Core 登记见 [v4/registry.json](v4/registry.json)。
 
-MAJOR 变化表示存在不兼容变化，例如：
+| 对象 | 命名与唯一性 |
+|---|---|
+| command | 每个名称只登记一项全局能力语义；多个 Profile 可引用，不能同名异义 |
+| reportName | 全局唯一，不能同名异义 |
+| Core 命令 | sync_state 等保留名称不得被 Profile 覆盖或重释 |
+| 命名 | 小写、下划线连接；不得用车型/客户/项目名作业务前缀；相同语义复用名称；仅产品独有能力使用产品前缀 |
 
-- 修改既有字段语义；
-- 修改既有必填字段；
-- 删除既有能力；
-- 修改既有命令成功边界；
-- 修改既有 Report 基本语义。
+command 表示能力而非输出器件、数量或内部对象。各 Profile 可定义自身目标、成功边界、结果及状态，但不得改变全局语义。例如 power_on/off 表示请求电源控制输出进入开启/关闭目标，不保证负载通断或授予运动权限。
 
-### 35.2 MINOR
+同设备引用同名命令的多个 Profile 必须由 command + params 唯一确定目标，否则不得同时启用；不得有路由冲突。多个 operationMatcher 必须且只能命中一个；0 个或多个均返回 4001，禁止动作，不得靠匹配顺序消歧。整个 command 所有参数组合类别一致时可省略 operationMatcher。
 
-MINOR 只允许向后兼容扩展，例如：
+| Registry | 最小登记字段 |
+|---|---|
+| Command | command、introducedVersion、semanticDescription、applicableProfiles |
+| ReportName | reportName、ownerProfile、introducedVersion、semanticDescription |
+| Profile | profileName、supportedMajorVersions、currentVersion |
 
-- 新增 command；
-- 新增 reportName；
-- 新增可忽略可选字段；
-- 新增业务专用响应码。
+| Profile 操作登记字段 | 定义 |
+|---|---|
+| command / operationMatcher | 名称及参数匹配条件 |
+| category | 四种操作类别之一 |
+| params | 参数 Schema |
+| expiresAt / maxValidity | 必填/可选/特殊规则及最大有效期 |
+| 200Boundary / result | 精确成功边界及同步结果 |
+| rebootPolicy / errorCodes | 跨重启策略及专用码 |
 
-### 35.3 平台兼容规则
+| Profile Report 登记字段 | 定义 |
+|---|---|
+| reportName / reportType / payload | 名称、三种类型之一及 Schema |
+| fullState | 是否完整状态 |
+| instanceId | 是否必需；多实例须与 Manifest instances 一致 |
+| orderedStream | 是否需要 streamId + sequence |
+| requestCorrelation | 是否可能关联 requestId |
 
-如果平台不支持设备声明的 Profile MAJOR：
+## 9. 平台处理与 V4 兼容性
 
-- 不得向该 Profile 发送动作类请求；
-- 可以保存未知 Report 原始数据；
-- 不得把该能力标记为已确认可控。
+平台必须先校验公共外层，再按公共路由处理；去重、最新状态主键、乱序、在线判定、未知字段/枚举分别遵循第 3、5～7 节。平台内部消息队列、存储或服务组织不得改变这些语义。
 
-如果 MAJOR 相同、设备 MINOR 高于平台：
+| 变化 | 版本要求 |
+|---|---|
+| 新 Profile、command、reportName；Profile MINOR 扩展；params/payload 可忽略可选字段；专用响应码；Manifest 兼容可选字段 | 可继续 `version="4.0"` |
+| 公共字段名、类型、必填性或既有语义；五 Topic 基本资源模型；requestId 基本幂等；reportId 去重；四类操作或 reportType 基本语义；会话安全边界 | 必须升级公共协议主版本 |
 
-- 平台使用已知兼容子集；
-- 忽略未知兼容扩展。
+全部既有参数及“五 Topic + 五类公共消息 + command 控制路由 + reportType/reportName 上报路由 + Manifest 能力治理”架构不得改变。除发现不可实现的安全缺陷外，后续评审不得重新引入强制 Component Resource Model 或重新拆分公共 Topic。
 
-如果设备 MINOR 低于平台：
+## 附录 A（规范性）：Canonicalization 与摘要
 
-- 平台不得使用高于设备 MINOR 才引入的能力。
+### A.1 V4 JSON Canonicalization
 
-Manifest 尚未确认时，不得把其中的业务能力视为当前在线实例“已确认可用”。
+固定采用 **语义集合归一化 + RFC 8785 JCS**：
 
----
+1. 解析时拒绝重复 Key、非法数字及不符合字段合同的值。
+2. Manifest profiles 先按 name 的 Unicode 码点顺序稳定排序；instances 按实例标识 Unicode 码点顺序稳定排序，重复实例非法。
+3. 其他数组保持顺序，只有 Core/Profile 明定为集合时可先排序。
+4. 随后执行 RFC 8785 JCS：对象递归排序、UTF-8 无 BOM、无额外空白、JCS 字符串转义。
+5. 不执行 Unicode Normalization；null 保留为 JSON null。字符串比较基于解码后的 Unicode 字符值，统一 UTF-8 Canonicalization。
+6. 数字词法及安全整数范围遵循第 3.2 节。
 
-## 36. manifestId
+对象字段乱序且值相同须产生相同 Canonical Bytes；普通 `[1,2]` 与 `[2,1]` 不同。Manifest Profile 顺序或 instances 顺序不同但集合相同须摘要一致；重复实例不能进入摘要。
 
-### 36.1 何时必须存在
+### A.2 请求摘要
 
-如果同一个 `firmware` 版本可能因为：
-
-- 配置；
-- 硬件装配；
-- 参数开关；
-- 项目差异；
-
-对应不同的 Profile 集合、Profile 版本或 `instances` 集合，则 `manifestId` 必须存在，并由心跳回显。
-
-只有当：
-
-> 同一 firmware 唯一决定全部 Profile、Profile 版本及 `instances` 集合
-
-时，才可以省略 `manifestId`。
-
-### 36.2 摘要输入
-
-`manifestId` 必须是 Manifest `data` 中除 `manifestId` 字段自身之外**全部字段**的规范化内容摘要。
-
-V4 摘要输入精确为：
+持久化或计算摘要时，必须按 A.1 规范化逻辑对象：
 
 ```json
-{
-  "firmware": "...",
-  "profiles": [...]
-}
+{"command":"...","params":null,"expiresAt":1770186093333}
 ```
 
-如果未来在同一 V4 兼容扩展中向 Manifest `data` 增加新的字段，该字段默认必须参与 `manifestId` 计算，除非公共协议明确声明该字段为“不参与摘要字段”。
+command 和 params 必须参与；携带 expiresAt 时必须参与。不使用 expiresAt 时须省略，不能补 null。缺 params 非法，params:null 与 params:{} 不等价。业务集合先按 Profile 声明归一化。
 
-外层：
+固定 `Request Digest = lowercase_hex(SHA-256(Canonical Bytes))`，64 位小写十六进制，不得选其他算法；外层 timestamp 不参与。
 
-```text
-version
-timestamp
-```
+### A.3 Manifest 摘要
 
-不参与 `manifestId`。
+摘要输入为 Manifest data 除 manifestId 自身外的**全部字段**；V4 为 `{"firmware":"...","profiles":[...]}`。未来兼容新增字段默认参与，除非公共协议明确声明不参与。外层 version/timestamp 不参与。
 
-### 36.3 固定算法
+固定 `manifestId = "sha256:" + lowercase_hex(SHA-256(canonical_manifest_data))`，格式 `sha256:<64位小写十六进制>`，不得选其他算法。
 
-V4 固定使用：
+### A.4 固定测试向量
 
-```text
-manifestId = "sha256:" + lowercase_hex(SHA-256(canonical_manifest_data))
-```
-
-字符串格式：
-
-```text
-sha256:<64位小写十六进制>
-```
-
-V4 不允许实现方自行选择其他摘要算法。
-
-### 36.4 Canonicalization
-
-V4 JSON Canonicalization 固定采用“语义集合归一化 + RFC 8785 JCS”：
-
-- 解析阶段拒绝重复 Key、非法数字和不符合字段合同的值；
-- Manifest 的 `profiles` 数组先按 `name` 的 Unicode 码点顺序稳定排序；
-- `profiles[].instances` 先按实例标识的 Unicode 码点顺序稳定排序，重复实例非法；
-- 其他数组保持原顺序，只有 Core 或 Profile 明确声明为集合的数组才可在 JCS 前排序；
-- 随后执行 RFC 8785 JCS：对象递归排序、UTF-8 无 BOM、无额外空白并使用 JCS 字符串转义；
-- 不执行 Unicode Normalization；`null` 保留为 JSON `null`；
-- V4 公共数字值只允许安全整数，不允许小数、指数形式、负零、`NaN` 或无穷值。
-
-Manifest Canonicalization 必须保证：
-
-- Profile 原始排列顺序不同但内容相同，摘要结果一致；
-- 多实例 `instances` 原始排列顺序不同但集合相同，摘要结果一致；
-- `instances` 中出现重复值属于非法 Manifest，不得进入摘要计算。
-
-固定测试向量位于 `docs/protocols/v4/test-vectors.json`，只读校验器为 `tools/validate_mqtt_v4.py`，覆盖：
-
-```text
-Manifest JSON
-→ Canonical Bytes
-→ SHA-256
-```
-
-测试向量以及重复 Key、Unicode、对象乱序、普通数组换序和非法数值。
-
----
-
-## 37. Manifest 发布和在线确认
-
-A-BOX 必须在以下情况发布 Manifest：
-
-1. MQTT 连接建立后；
-2. 固件版本变化后；
-3. Profile 集合变化后；
-4. Profile 版本变化后；
-5. 影响能力声明的配置变化后。
-
-Retained Manifest 只代表最近一次设备声明，不证明设备当前在线。
-
-Manifest 在线确认规则：
-
-1. **使用 `manifestId` 的产品**：平台只有在当前在线心跳中收到与 Retained Manifest 相同的 `manifestId` 后，才能确认该 Manifest 对应当前在线实例。
-2. **省略 `manifestId` 的产品**：该产品必须满足“同一 `firmware` 唯一决定全部 Profile 及其版本”。平台只有在当前在线心跳中的 `firmware` 与 Retained Manifest 中的 `firmware` 完全一致后，才能确认该 Manifest 对应当前在线实例。
-3. Manifest 尚未完成上述在线确认时，平台不得把其中能力标记为当前在线实例已确认可用。
-4. 平台只有在收到报文版本为 `4.0` 的当前在线心跳并确认对应 Manifest 后才允许下发动作；协议版本或能力状态不明确时不得下发动作。
-
----
-
-## 38. MQTT 重连后的发布顺序
-
-A-BOX 成功重新连接 Broker 后，逻辑执行顺序必须为：
-
-```text
-1. 发布 Manifest
-2. 启动 / 恢复 Heartbeat
-3. 补发所有完整 State
-4. 进入正常业务运行
-```
-
-该顺序用于设备端发送逻辑。
-
-平台不得假定不同 Topic 经 Broker Bridge、Kafka 等后续链路后仍保持严格到达顺序。
-
-如果业务 Report 先于 Manifest 确认进入平台：
-
-- 可以保存或缓存；
-- 不得据此确认新的业务能力已经可用。
-
----
-
-## 39. command / reportName / Profile 注册治理
-
-全平台必须维护稳定的：
-
-```text
-Command Registry
-ReportName Registry
-Profile Registry
-```
-
-### 39.1 全局唯一性
-
-V4 公共业务命名空间中：
-
-- 每个 `command` 名称只登记一项全局能力语义；多个 Profile 可以引用同一项；
-- `reportName` 必须全局唯一；
-- 不允许不同 Profile 注册同名但不同语义的 `command`；
-- 不允许不同 Profile 注册同名但不同语义的 `reportName`；
-- `sync_state` 等 Core 定义的命令属于保留名称，任何 Profile 不得覆盖或重新解释；
-- 同一 A-BOX 上不得存在路由含义冲突的注册项。
-
-`command` 名表示能力，不表示具体输出器件、输出数量或内部实现对象。引用同名命令的各 Profile 可以定义各自的目标状态、成功边界、响应结果和完整状态，但不得改变该命令的全局能力语义。例如 `power_on` / `power_off` 表示请求设备电源控制输出进入开启 / 关闭目标状态；它们不保证外部负载已实际通断，也不授予运动控制权限。只有产品独有的能力才增加产品前缀命令。
-
-同一设备若声明多个引用同名命令的 Profile，必须通过 `command + params` 唯一确定目标操作；不能唯一确定时不得同时启用这些 Profile。
-
-由于普通业务请求中不携带 Profile 标识，A-BOX 必须能够仅依据：
-
-```text
-command + params
-```
-
-在执行前唯一确定目标业务操作。
-
-### 39.2 Registry 最小登记信息
-
-Command Registry 至少记录：
-
-```text
-command
-introducedVersion
-semanticDescription
-applicableProfiles
-```
-
-ReportName Registry 至少记录：
-
-```text
-reportName
-ownerProfile
-introducedVersion
-semanticDescription
-```
-
-Profile Registry 至少记录：
-
-```text
-profileName
-supportedMajorVersions
-currentVersion
-```
-
-### 39.3 operationMatcher 唯一匹配
-
-同一个 `command` 可以通过多个 `operationMatcher` 区分不同可执行操作。
-
-在实际执行前：
-
-- 必须且只能命中一个 `operationMatcher`；
-- 命中 0 个时返回 `4001 INVALID_REQUEST`；
-- 同时命中多个时返回 `4001 INVALID_REQUEST`；
-- 以上两种情况均不得执行任何业务动作。
-
-Profile 设计时不得依赖“匹配顺序”消除歧义。
-
-### 39.4 命名规则
-
-命名规则至少要求：
-
-- 小写；
-- 单词使用下划线连接；
-- 不使用车型名、客户名、项目名作为业务命名前缀；
-- 相同业务语义必须复用已有名称。
-
-例如不应存在：
-
-```text
-vehicle_a_wing_control
-vehicle_b_wing_control
-```
-
-如果语义一致，应统一：
-
-```text
-wing_control
-```
-
-`command`、`reportName` 和 Profile 名称最大长度均为 64 个字符。
-
----
-
-## 40. Profile 操作登记表
-
-每个 Profile 必须为所有可执行操作维护至少以下信息：
-
-| 字段 | 说明 |
-|---|---|
-| `command` | 命令名称 |
-| `operationMatcher` | 参数条件，用于在执行前确定操作 |
-| `category` | QUERY / DISCRETE_ACTION / CONTINUOUS_SESSION / SAFETY_STOP |
-| `params` | 参数 Schema |
-| `expiresAt` | 必填 / 可选 / 特殊规则 |
-| `maxValidity` | 允许的最大请求有效期 |
-| `200Boundary` | `code=200` 的精确业务含义 |
-| `result` | 同步返回定义 |
-| `rebootPolicy` | 跨重启策略 |
-| `errorCodes` | 专用响应码 |
-
-如果整个 `command` 的所有参数组合都属于同一类别，可以省略 `operationMatcher`。
-
----
-
-## 41. Profile Report 登记表
-
-每个 Profile 必须为 Report 维护至少：
-
-| 字段 | 说明 |
-|---|---|
-| `reportName` | 上报名称 |
-| `reportType` | state / event / telemetry |
-| `payload` | Payload Schema |
-| `fullState` | 是否属于完整状态 |
-| `instanceId` | 是否要求；多实例时必须与 Manifest `instances` 规则一致 |
-| `orderedStream` | 是否要求 streamId + sequence |
-| `requestCorrelation` | 是否可能携带 requestId |
-
-Report QoS 由公共 `reportType` 固定，不允许 Profile 单独降低或提升。
-
----
-
-## 42. 平台状态主键
-
-平台保存最新 `state` 时，逻辑状态主键统一为：
-
-```text
-deviceId + reportName + instanceId
-```
-
-单实例 Profile 的 `instanceId` 使用固定逻辑空值。
-
----
-
-## 43. 平台处理边界
-
-平台内部可以选择任意消息队列、存储和服务拆分方式，但不得改变下列协议语义：
-
-1. 先校验公共外层，再按 `command` 或 `reportType + reportName` 路由；
-2. 按 `deviceId + reportId` 执行 24 小时 Report 去重；
-3. 按第 42 节逻辑主键保存最新 `state`；
-4. 不假定不同 MQTT Topic 经过中间链路后仍保持到达顺序；
-5. 心跳在线判定使用 Broker 接收时间，不与业务 Report 状态混为一体；
-6. 未识别的兼容字段和枚举按第 6.3、6.4 节处理，不得由平台内部实现重新解释公共语义。
-
----
-
-## 44. MQTT 传输、设备身份、deviceId 与 ACL
-
-生产环境允许明文 MQTT 或 MQTT over TLS；两种传输方式的设备身份、独立凭据与 ACL 要求相同。是否使用 TLS 由产品部署决定，不改变公共 Topic 和报文格式。
-
-### 44.1 独立设备凭据
-
-每台 A-BOX **必须使用独立设备凭据**。
-
-禁止多台生产 A-BOX 共享同一可写公共业务凭据。
-
-已认证设备身份必须在服务端唯一绑定到一个：
-
-```text
-deviceId
-```
-
-Broker 和平台不得仅信任客户端在 Topic 或 Payload 中自行声明的设备身份。
-
-### 44.2 deviceId 字符约束
-
-V4 的 `deviceId` 仅允许：
-
-```text
-A-Z
-a-z
-0-9
-_
--
-```
-
-必须使用以下完整校验表达式：
-
-```text
-^[A-Za-z0-9_-]+$
-```
-
-明确禁止：
-
-```text
-/
-+
-#
-空白字符
-控制字符
-```
-
-`deviceId` 长度固定为 1～32 个 ASCII 字符。
-
-### 44.3 身份绑定与 ACL
-
-Broker ACL 必须基于“已认证设备身份 → 唯一 deviceId”的服务端绑定生成。
-
-A-BOX 只能发布自身：
-
-```text
-/zxwl/abox/{deviceId}/response
-/zxwl/abox/{deviceId}/report
-/zxwl/abox/{deviceId}/heartbeat
-/zxwl/abox/{deviceId}/manifest
-```
-
-A-BOX 只能订阅自身：
-
-```text
-/zxwl/abox/{deviceId}/request
-```
-
-不得允许一台 A-BOX：
-
-- 发布其他 `deviceId` 的消息；
-- 订阅其他 `deviceId` 的请求；
-- 使用 MQTT 通配符扩大自身授权范围；
-- 通过构造 Topic 字符串绕过身份绑定。
-
-### 44.4 MQTT ClientId
-
-MQTT `ClientId` 必须逐字等于 `deviceId`。Broker 必须把已认证设备凭据、`ClientId` 和 Topic ACL 三者绑定；不得仅凭客户端提供的 `ClientId` 授权。
-
-使用 TLS 时最低为 TLS 1.2，支持时优先 TLS 1.3；设备必须校验服务端证书链、主机名和证书有效时间，并发送正确 SNI。使用明文 MQTT 时，链路不提供保密性和传输层防篡改能力，部署方必须明确接受这一风险，不得把明文连接标识为 TLS 连接。每台设备在两种传输方式下都必须使用独立 Broker 凭据；凭据轮换属于受控配置或生产 provisioning，不通过公共业务 Topic 传输，切换完成后必须撤销旧凭据。
-
----
-
-## 45. 报文大小和字段限制
-
-| 项目 | 正式上限或格式 |
-|---|---|
-| MQTT 单条 Payload | 完整 UTF-8 JSON 最大 1024 字节，不含 Topic 和 MQTT 包头；禁止 BOM |
-| `params` / `result` / `payload` | 各自序列化后最大 768 字节，同时仍受整包 1024 字节限制 |
-| `requestId` | 1～64 个 ASCII 字符，`^[A-Za-z0-9][A-Za-z0-9._:-]*$` |
-| `reportId` | 1～96 个 ASCII 字符，同上 |
-| `streamId` | 1～64 个 ASCII 字符，同上 |
-| `instanceId` | 1～32 个 ASCII 字符，`^[A-Za-z0-9_-]+$` |
-| `command` / `reportName` / Profile 名称 | 最长 64 个字符，小写 snake_case |
-| `firmware` | 最长 64 个 ASCII 字符 |
-| `msg` | 最长 128 个 UTF-8 字节，禁止控制字符 |
-| Manifest | 最多 16 个 Profile |
-| Report 去重 | `deviceId + reportId` 保存 24 小时 |
-| 请求幂等保护 | 至少保存至 `expiresAt + 10 分钟` |
-
-超出公共单包上限的数据不得自行在公共业务 Topic 中分片。
-
-大文件、日志、固件等继续使用 `/internal/*` 对应的数据通道。
-
----
-
-## 46. 自动重连
-
-A-BOX 必须实现 MQTT 自动重连，并使用以下固定退避规则：
-
-1. 首次连接随机延迟 0～4 秒；
-2. 连续失败的退避上限依次为 4、8、16、32、60 秒；
-3. 每次实际延迟从当前上限的 50%～100% 取带设备差异的随机抖动；
-4. 后续失败保持 60 秒上限；
-5. 稳定在线 5 分钟后重置退避级别。
-
-设备差异抖动必须避免大量设备在同一固定时间点同步重连 Broker。
-
----
-
-## 47. V4 兼容性规则
-
-以下变化可以继续使用：
-
-```text
-version = "4.0"
-```
-
-- 新增 Profile；
-- 新增 command；
-- 新增 reportName；
-- Profile MINOR 兼容扩展；
-- `params` 增加可忽略可选字段；
-- `payload` 增加可忽略可选字段；
-- 新增 Profile 专用响应码；
-- Manifest 增加兼容可选字段。
-
-以下变化必须升级公共协议主版本：
-
-- 修改公共字段名称；
-- 修改公共字段类型；
-- 修改公共字段必填性；
-- 修改既有公共字段语义；
-- 修改五个公共 Topic 的基本资源模型；
-- 修改 `requestId` 基本幂等语义；
-- 修改 `reportId` 去重语义；
-- 修改四种操作类别基本语义；
-- 修改 `reportType` 基本语义；
-- 修改 MQTT 会话安全边界。
-
----
-
-## 48. V4 公共模型汇总
-
-### Request
-
-```text
-version
-timestamp
-data
-├─ requestId
-├─ command
-├─ expiresAt?
-└─ params
-```
-
-### Response
-
-```text
-version
-timestamp
-data
-├─ requestId
-├─ code
-├─ msg
-└─ result?
-```
-
-### Report
-
-```text
-version
-timestamp
-data
-├─ reportId
-├─ reportType
-├─ reportName
-├─ instanceId?
-├─ streamId?   ┐
-├─ sequence?   ┘ 必须成对
-├─ requestId?
-└─ payload
-```
-
-### Heartbeat
-
-```text
-version
-timestamp
-data
-├─ firmware
-└─ manifestId?   // 能力不能由 firmware 唯一确定时要求
-```
-
-### Manifest
-
-```text
-version
-timestamp
-data
-├─ manifestId?
-├─ firmware
-└─ profiles[]
-```
-
----
-
-## 49. 正式冻结参数汇总
-
-V4.0 架构和实现性参数均已冻结：
-
-1. 完整 MQTT Payload 最大 1024 字节；内容对象最大 768 字节；
-2. 标识、命名和展示字段长度按第 45 节；
-3. `deviceId` 为 1～32 个指定 ASCII 字符，`ClientId` 必须与其相同；
-4. 心跳固定 5 秒，平台连续 15 秒未收到即离线；
-5. `DISCRETE_ACTION` 公共有效期上限 30 秒，Profile 只能更短；
-6. 请求幂等保护至 `expiresAt + 10 分钟`；
-7. Report 去重保留 24 小时；
-8. 生产可使用明文 MQTT 或最低 TLS 1.2，每设备均使用独立凭据；
-9. 重连使用 4/8/16/32/60 秒上限和 50%～100% 抖动；
-10. Canonicalization 使用语义集合归一化后执行 RFC 8785 JCS；
-11. Manifest 摘要固定使用 SHA-256，固定向量随协议归档；
-12. 请求摘要固定使用 SHA-256，固定向量随协议归档；
-13. Epoch 和安全整数边界、词法及非法值固定向量随协议归档；
-14. `sync_state` 等待超时固定为 15 秒；
-15. Command、ReportName 和 Profile 以机器可校验 Registry 为唯一登记入口；
-
-以上冻结参数不得重新改变：
-
-```text
-五 Topic
-+
-Request / Response / Report / Heartbeat / Manifest 公共模型
-+
-command 控制路由
-+
-reportType/reportName 上报路由
-+
-Manifest 能力治理
-```
-
-这一整体架构。
-
-除非发现不可实现的安全缺陷，否则后续评审不得重新引入强制 Component Resource Model 或重新拆分公共 Topic。
-
----
-
-## 50. 最终设计目标
-
-V4 应保证：
-
-```text
-新增车型
-    ≠ 修改公共协议
-
-改变车辆设备组合
-    ≠ 修改公共协议
-
-新增业务能力
-    = 新增或升级 Profile
-
-新增控制能力
-    = 新增 command / 可执行操作
-
-新增主动业务数据
-    = 新增 reportName
-
-底层 CAN / RS485 / 执行器变化
-    ≠ 修改平台公共协议
-```
-
-即：
-
-> **公共协议只解决平台与 A-BOX 如何可靠、安全、一致地通信。**
-
-> **业务 Profile 只解决具体操作做什么，以及 A-BOX 向平台报告什么。**
+[v4/test-vectors.json](v4/test-vectors.json) 是规范性固定向量，跨设备和平台必须一致使用，覆盖 Manifest/请求逻辑对象 → Canonical Bytes → SHA-256，以及重复 Key、Unicode、对象乱序、普通数组换序、整数边界和非法数值词法。
