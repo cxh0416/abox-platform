@@ -26,7 +26,7 @@ def main(exe):
         run(exe, vector["json"].encode(), valid=False)
     for raw in [b'{"a":1,"\\u0061":2}', b'{"a":"\\ud800"}', b'{"a":"\\u0000"}',
                 b'{"a":"\xc0\x80"}', b'{"a":01}', b'{"a":true}tail',
-                b'[' * 17 + b'0' + b']' * 17, b'{"a":0}\x00']:
+                b'[' * 17 + b'0' + b']' * 17, b'{"a":0}\x00', b'{"a":"\x01"}']:
         run(exe, raw, valid=False)
     for value in [{"\U0001f600": 1, "\ue000": 2, "\r": "\b\t\n\f\r\x01/\\\""},
                   {"a": -9007199254740991, "b": [True, False, None]},

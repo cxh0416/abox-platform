@@ -122,6 +122,7 @@ cJSON *ABoxMqttDigest_Parse(const char *json, size_t length)
     for (size_t i = 0; i < length; ++i) {
         if (json[i] == '"') {
             while (++i < length && json[i] != '"') {
+                if ((unsigned char)json[i] < 32) return NULL;
                 if (json[i] == '\\') {
                     if (++i >= length) return NULL;
                     if (json[i] == 'u' && i + 4 < length && !memcmp(json + i + 1, "0000", 4)) return NULL;
@@ -175,6 +176,8 @@ int ABoxMqttDigest_RequestFields(const char *command, const cJSON *params,
 }
 int ABoxMqttDigest_Request(const cJSON *data, const cJSON *normalized_params, uint8_t digest[32])
 {
+    if (!digest) return 0;
+    memset(digest, 0, 32);
     if (!cJSON_IsObject(data) || !canonical(data, discard, NULL, 0)) return 0;
     const cJSON *command = cJSON_GetObjectItemCaseSensitive(data, "command");
     const cJSON *params = normalized_params ? normalized_params : cJSON_GetObjectItemCaseSensitive(data, "params");

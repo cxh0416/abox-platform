@@ -16,8 +16,10 @@
 | `tls_profile_id` | TLS profile 标识，由产品/平台集成层解析为 CA 与 TLS 参数 |
 
 `tls_enabled=0` 时不得申请或绑定 SSL context，也不得执行 CA、TLS profile 或
-MQTT SSL binding 配置。`tls_enabled=1` 时必须使用指定 profile 完成 CA 校验、
-SSL context 配置和 MQTT SSL binding；任一步失败都按 candidate 失败处理。
+MQTT SSL binding 配置。`tls_enabled=1` 时必须使用指定 profile 和
+`tls_credentials.mode` 完成认证、SSL context 配置和 MQTT SSL binding；
+CA 模式执行 CA/证书及时间校验，PSK 模式执行既有 PSK 身份和独立秘密校验
+（见“TLS 认证模式”）。任一步失败都按 candidate 失败处理。
 
 正式开关只能来自 runtime 配置。构建宏可以裁剪测试目标，但不得作为产品切换
 明文/TLS 的正式机制；交付固件必须同时保留两种连接能力。

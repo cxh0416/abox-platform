@@ -35,6 +35,10 @@ int main(void)
     assert(topic[0] == '\0');
     assert(!ABoxMqttV4_BuildTopic(topic, sizeof(topic), "", ABOX_MQTT_V4_TOPIC_REPORT));
     assert(!ABoxMqttV4_BuildTopic(topic, sizeof(topic), "device-1", ABOX_MQTT_V4_TOPIC_COUNT));
+    char full_device_id[33];
+    memset(full_device_id, 'a', 32); full_device_id[32] = '\0';
+    assert(ABoxMqttV4_BuildTopic(topic, sizeof(topic), full_device_id, ABOX_MQTT_V4_TOPIC_REPORT));
+    assert(strstr(topic, full_device_id)); /* Provisioning capacity is not the wire ceiling. */
 
     assert(ABoxMqttV4_RegistryValid(&registry));
     assert(ABoxMqttV4_FindProfile(&registry, "fixture") == &profile);
