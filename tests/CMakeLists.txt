@@ -136,3 +136,10 @@ add_test(NAME abox_psk_station_test COMMAND abox_psk_station_test)
 add_executable(abox_ec800_diagnostics_test abox_ec800_diagnostics_test.c)
 target_link_libraries(abox_ec800_diagnostics_test PRIVATE abox::ec800)
 add_test(NAME abox_ec800_diagnostics_test COMMAND abox_ec800_diagnostics_test)
+
+add_executable(abox_mqtt_digest_test abox_mqtt_digest_test.c)
+target_link_libraries(abox_mqtt_digest_test PRIVATE abox::mqtt_digest)
+add_test(NAME abox_mqtt_digest_test COMMAND abox_mqtt_digest_test)
+add_test(NAME abox_mqtt_digest_vectors
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_mqtt_digest_vectors.py
+        $<TARGET_FILE:abox_mqtt_digest_test>)

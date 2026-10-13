@@ -4,6 +4,12 @@ foreach(module mqtt_v4 mqtt_ec800_rx mqtt_ec800 mqtt_tls mqtt_runtime mqtt_trial
     target_include_directories(abox_${module} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endforeach()
 target_link_libraries(abox_mqtt_v4 PUBLIC abox::core)
+target_sources(abox_mqtt_v4 PRIVATE src/abox_sha256.c)
+
+add_library(abox_mqtt_digest STATIC src/abox_mqtt_digest.c)
+add_library(abox::mqtt_digest ALIAS abox_mqtt_digest)
+target_include_directories(abox_mqtt_digest PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(abox_mqtt_digest PUBLIC abox::mqtt_v4 abox::cjson)
 target_link_libraries(abox_mqtt_ec800 PUBLIC abox::ec800 abox::mqtt_ec800_rx)
 target_sources(abox_mqtt_ec800 PRIVATE src/abox_mqtt_receipt.c
     src/abox_mqtt_ec800_bridge.c)
