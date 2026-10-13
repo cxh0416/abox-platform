@@ -1,6 +1,8 @@
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME abox_mqtt_psk_files_test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_mqtt_psk_files.py)
+add_test(NAME abox_jlink_swd_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_jlink_swd.py)
 add_executable(abox_monotonic_test abox_monotonic_test.c)
 target_include_directories(abox_monotonic_test PRIVATE monotonic_stub
     ../targets/stm32f105_ec800_v1/include)

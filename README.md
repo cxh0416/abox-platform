@@ -14,6 +14,7 @@
 - `targets/stm32f105_abox_boot/`：完整、可独立构建的公共 Boot 工程。
 - `tests/`：公共组件主机测试。
 - `tools/`：Flash 布局、产品矩阵、基线和产品发布校验工具。
+- [底层 SWD 调试工具](docs/internal/jlink_swd_debugging.md)：常规 J-Link/GDB 连续读取失败时使用公共脚本切换到 CoreSight AP/DP 访问。
 - `docs/`：平台合同、公共 MQTT V3/V4 协议、V4 Registry、产品迁移矩阵和基线记录。
 
 编译缓存统一放在根目录的 `build/` 下：主机测试复用 `build/host/`，公共 Boot 复用 `build/boot/Release/`（或 `Debug/`）。这些目录不属于平台源码。
