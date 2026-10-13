@@ -12,14 +12,16 @@ static int write_fail_after=-1,write_calls;
 static uint8_t image_valid=1U,reset_value;
 static ABoxBootV2InstallResult install_result=ABOX_BOOT_V2_INSTALL_OK;
 static uint32_t install_calls,jump_calls;
+static uint8_t match_image_metadata;
+static uint32_t flash_image_size,flash_image_crc;
 static int begin(void*c){(void)c;return 1;}static void end(void*c){(void)c;}
 static int read_flash(void*c,uint32_t a,uint8_t*d,uint32_t n){(void)c;if(a<BASE||a-BASE+n>sizeof(flash_mem))return 0;memcpy(d,flash_mem+a-BASE,n);return 1;}
 static int write_flash(void*c,uint32_t a,const uint8_t*d,uint32_t n){(void)c;if(write_fail_after>=0&&write_calls++>=write_fail_after)return 0;if(a<BASE||a-BASE+n>sizeof(flash_mem))return 0;memcpy(flash_mem+a-BASE,d,n);return 1;}
 static int erase(void*c,uint32_t a){(void)c;if(a<BASE||a-BASE+0x800U>sizeof(flash_mem))return 0;memset(flash_mem+a-BASE,0xFF,0x800U);return 1;}
 static uint32_t tick(void*c){(void)c;return 0;}static int uart(void*c,const uint8_t*d,uint32_t n){(void)c;(void)d;return n?1:0;}
 static void critical(void*c){(void)c;}
-static uint8_t boot_flash_valid(void*c,uint32_t size,uint32_t crc){(void)c;(void)size;(void)crc;return image_valid;}
-static ABoxBootV2InstallResult boot_install(void*c,uint8_t slot,uint32_t size,uint32_t crc){(void)c;(void)slot;(void)size;(void)crc;install_calls++;return install_result;}
+static uint8_t boot_flash_valid(void*c,uint32_t size,uint32_t crc){(void)c;return image_valid&&(!match_image_metadata||(size==flash_image_size&&crc==flash_image_crc));}
+static ABoxBootV2InstallResult boot_install(void*c,uint8_t slot,uint32_t size,uint32_t crc){(void)c;(void)slot;install_calls++;if(install_result==ABOX_BOOT_V2_INSTALL_OK){flash_image_size=size;flash_image_crc=crc;}return install_result;}
 static uint8_t boot_vector(void*c){(void)c;return 1U;}
 static void boot_jump(void*c){(void)c;jump_calls++;}
 static uint8_t boot_reset(void*c){(void)c;return reset_value;}
@@ -45,6 +47,22 @@ int main(void)
     memset(&r,0,sizeof(r));r.state=ABOX_BOOT_V2_INSTALL_PENDING;r.stable_slot=0U;r.candidate_slot=1U;r.stable_image_size=16U;r.stable_image_crc32=0x11111111U;r.image_size=32U;r.image_crc32=0x22222222U;memcpy(r.stable_image_version,"stable",7U);memcpy(r.image_version,"candidate",10U);assert(ABoxBootV2_StateSave(&r));
     install_calls=jump_calls=0U;reset_value=0U;image_valid=1U;install_result=ABOX_BOOT_V2_INSTALL_OK;assert(ABoxBootV2Boot_Init(&boot_port));ABoxBootV2Boot_Task();assert(install_calls==1U&&jump_calls==1U);assert(ABoxBootV2_StateLoad(&r));assert(r.state==ABOX_BOOT_V2_TRIAL&&r.trial_fail_count==0U);
     for(uint8_t attempt=1U;attempt<=3U;++attempt){reset_value=3U;assert(ABoxBootV2Boot_Init(&boot_port));ABoxBootV2Boot_Task();assert(ABoxBootV2_StateLoad(&r));assert(r.trial_fail_count==attempt);}
-    assert(r.state==ABOX_BOOT_V2_ROLLBACK);reset_value=0U;assert(ABoxBootV2Boot_Init(&boot_port));ABoxBootV2Boot_Task();assert(install_calls==2U);assert(ABoxBootV2_StateLoad(&r));assert(r.state==ABOX_BOOT_V2_ROLLBACK&&r.rollback_installed&&r.rollback_report_pending);assert(ABoxBootV2_AcknowledgeRollback());assert(ABoxBootV2_StateLoad(&r));assert(r.state==ABOX_BOOT_V2_CONFIRMED&&!r.rollback_report_pending);
+    assert(r.state==ABOX_BOOT_V2_ROLLBACK);reset_value=0U;assert(ABoxBootV2Boot_Init(&boot_port));ABoxBootV2Boot_Task();assert(install_calls==2U);assert(ABoxBootV2_StateLoad(&r));assert(r.state==ABOX_BOOT_V2_ROLLBACK&&r.rollback_installed&&r.rollback_report_pending);
+    /* A lost ACK save must retain the readable rollback record. */
+    out=r;write_fail_after=5;write_calls=0;assert(!ABoxBootV2_AcknowledgeRollback());write_fail_after=-1;
+    assert(ABoxBootV2_StateLoad(&r));assert(!memcmp(&r,&out,sizeof(r)));
+    assert(ABoxBootV2_AcknowledgeRollback());assert(ABoxBootV2_StateLoad(&r));assert(r.state==ABOX_BOOT_V2_CONFIRMED&&!r.rollback_report_pending);
+    assert(r.candidate_slot==r.stable_slot&&r.image_size==r.stable_image_size&&r.image_crc32==r.stable_image_crc32);
+    assert(!strcmp(r.image_version,r.stable_image_version));
+    assert(r.trial_fail_count==3U&&r.last_error==ABOX_BOOT_V2_ERROR_ROLLED_BACK);
+    /* Validate the actual installed image after a fresh boot, not a constant
+     * "valid" mock which hides stale candidate metadata. */
+    match_image_metadata=1U;uint32_t previous_jumps=jump_calls;
+    assert(ABoxBootV2Boot_Init(&boot_port));ABoxBootV2Boot_Task();
+    assert(jump_calls==previous_jumps+1U&&install_calls==2U);
+    r.state=ABOX_BOOT_V2_ROLLBACK;r.rollback_report_pending=1U;r.rollback_installed=1U;
+    r.stable_image_size=0U;assert(ABoxBootV2_StateSave(&r));
+    assert(!ABoxBootV2_AcknowledgeRollback());assert(ABoxBootV2_StateLoad(&out));
+    assert(out.state==ABOX_BOOT_V2_ROLLBACK&&out.rollback_report_pending);
     return 0;
 }

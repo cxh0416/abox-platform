@@ -50,5 +50,20 @@ int ABoxBootV2_StateSave(const ABoxBootV2Record *input)
     ABox_PortFlashEnd(); return read_record(address,&verify)&&memcmp(&verify,&next,sizeof(next))==0&&valid(&verify);
 }
 int ABoxBootV2_Confirm(void){ABoxBootV2Record s;if(!ABoxBootV2_StateLoad(&s)||s.state!=ABOX_BOOT_V2_TRIAL)return 1;s.state=ABOX_BOOT_V2_CONFIRMED;s.stable_slot=s.candidate_slot;s.stable_image_size=s.image_size;s.stable_image_crc32=s.image_crc32;memcpy(s.stable_image_version,s.image_version,sizeof(s.stable_image_version));s.trial_fail_count=0U;return ABoxBootV2_StateSave(&s);}
-int ABoxBootV2_AcknowledgeRollback(void){ABoxBootV2Record s;if(!ABoxBootV2_StateLoad(&s)||!s.rollback_report_pending)return 1;s.rollback_report_pending=0U;s.rollback_installed=0U;s.state=ABOX_BOOT_V2_CONFIRMED;return ABoxBootV2_StateSave(&s);}
+int ABoxBootV2_AcknowledgeRollback(void)
+{
+    ABoxBootV2Record s;
+    if (!ABoxBootV2_StateLoad(&s) || !s.rollback_report_pending) return 1;
+    if (s.state != ABOX_BOOT_V2_ROLLBACK || !s.rollback_installed ||
+        s.stable_slot > 1U || s.stable_image_size == 0U) return 0;
+    /* The next boot validates image_* against the installed stable App. */
+    s.candidate_slot = s.stable_slot;
+    s.image_size = s.stable_image_size;
+    s.image_crc32 = s.stable_image_crc32;
+    memcpy(s.image_version, s.stable_image_version, sizeof(s.image_version));
+    s.rollback_report_pending = 0U;
+    s.rollback_installed = 0U;
+    s.state = ABOX_BOOT_V2_CONFIRMED;
+    return ABoxBootV2_StateSave(&s);
+}
 const char *ABoxBootV2_StateName(uint32_t s){static const char*const n[]={"NORMAL","INSTALL_PENDING","INSTALLING","TRIAL","CONFIRMED","ROLLBACK"};return s<6U?n[s]:"UNKNOWN";}
