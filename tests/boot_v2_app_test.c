@@ -113,8 +113,8 @@ static void cancel(void *context)
     pending_done = 0;
     pending_user = 0;
 }
-static void register_events(void *context, ABoxBootV2AtEventFn callback, void *user)
-{ (void)context; event_fn = callback; event_user = user; }
+static int register_events(void *context, ABoxBootV2AtEventFn callback, void *user)
+{ (void)context; event_fn = callback; event_user = user; return 1; }
 static void mqtt_pause(void *context, uint8_t paused) { (void)context; mqtt_paused = paused; }
 static int delegated_stop(void *context, uint32_t now)
 {

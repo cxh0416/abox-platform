@@ -30,7 +30,11 @@ int ABoxEc800Iccid_Init(ABoxEc800Iccid *identity, ABoxEc800At *at,
     memset(identity, 0, sizeof(*identity));
     identity->at = at;
     identity->owner = owner;
-    return ABoxEc800At_Register(at, owner, on_line, identity);
+    if (!ABoxEc800At_Register(at, owner, on_line, identity)) {
+        identity->at = NULL;
+        return 0;
+    }
+    return 1;
 }
 
 int ABoxEc800Iccid_Request(ABoxEc800Iccid *identity, uint32_t now_ms)

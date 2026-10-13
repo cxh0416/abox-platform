@@ -86,15 +86,16 @@ static void event(ABoxEc800Event kind, const uint8_t *data,
                         adapter->events_user);
 }
 
-static void register_events(void *context, ABoxBootV2AtEventFn callback,
+static int register_events(void *context, ABoxBootV2AtEventFn callback,
                             void *user)
 {
     ABoxBootV2Ec800Adapter *adapter = (ABoxBootV2Ec800Adapter *)context;
-    if (!adapter || !adapter->at) return;
+    if (!adapter || !adapter->at || !callback) return 0;
+    if (!ABoxEc800At_Register(adapter->at, ABOX_EC800_OWNER_OTA,
+                              event, adapter)) return 0;
     adapter->events = callback;
     adapter->events_user = user;
-    (void)ABoxEc800At_Register(adapter->at, ABOX_EC800_OWNER_OTA,
-                               event, adapter);
+    return 1;
 }
 
 static uint32_t rx_overflow(void *context)

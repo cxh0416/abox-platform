@@ -228,7 +228,12 @@ static void on_event(ABoxEc800Event event, const uint8_t *data,
     ABoxEnrollmentEc800Http *h = user;
     char line[96];
     unsigned long result, status, size;
-    if (!h || h->state == ABOX_ENROLL_HTTP_IDLE || !data) return;
+    if (!h || !data) return;
+    if (event == ABOX_EC800_EVENT_LINE && length == 3U && !memcmp(data, "RDY", 3U)) {
+        ABoxEnrollmentEc800Http_AfterModemReset(h);
+        return;
+    }
+    if (h->state == ABOX_ENROLL_HTTP_IDLE) return;
     if (event == ABOX_EC800_EVENT_RAW) {
         if (h->state == ABOX_ENROLL_CA_READ) {
             if (length > h->ca_length - h->ca_offset ||
@@ -299,16 +304,20 @@ int ABoxEnrollmentEc800Http_Init(ABoxEnrollmentEc800Http *h, ABoxEc800At *at,
         strlen(ca_file) > 80U || !done) return 0;
     memset(h, 0, sizeof(*h));
     h->at = at; h->owner = owner; h->ca_file = ca_file; h->done = done; h->user = user;
-    return ABoxEc800At_Register(at, owner, on_event, h);
+    if (!ABoxEc800At_Register(at, owner, on_event, h)) {
+        h->at = NULL;
+        return 0;
+    }
+    return 1;
 }
 
 int ABoxEnrollmentEc800Http_Ready(const ABoxEnrollmentEc800Http *h)
-{ return h && !h->blocked && (!h->ca_pem || h->ca_verified) &&
+{ return h && h->at && !h->blocked && (!h->ca_pem || h->ca_verified) &&
          h->state == ABOX_ENROLL_HTTP_IDLE && !ABoxEc800At_IsBusy(h->at); }
 
 int ABoxEnrollmentEc800Http_SetCaPem(ABoxEnrollmentEc800Http *h, const uint8_t *pem, uint32_t n)
 {
-    if (!h || h->state != ABOX_ENROLL_HTTP_IDLE || !pem || !n || n > UINT16_MAX ||
+    if (!h || !h->at || h->state != ABOX_ENROLL_HTTP_IDLE || !pem || !n || n > UINT16_MAX ||
         !strcmp(h->ca_file, "UFS:ota_ca.pem") || !strcmp(h->ca_file, "ota_ca.pem")) return 0;
     h->ca_pem = pem; h->ca_length = n; h->ca_verified = 0;
     return 1;
@@ -353,6 +362,12 @@ void ABoxEnrollmentEc800Http_Cancel(ABoxEnrollmentEc800Http *h)
 void ABoxEnrollmentEc800Http_AfterModemReset(ABoxEnrollmentEc800Http *h)
 {
     if (!h) return;
+    ABoxEc800At_Cancel(h->at, h->owner);
+    if (h->state != ABOX_ENROLL_HTTP_IDLE && h->state < ABOX_ENROLL_CA_LIST) {
+        h->status = 0U;
+        h->response_length = 0U;
+        finish(h, 1); /* Reset proves the previous HTTP session is closed. */
+    }
     h->state = ABOX_ENROLL_HTTP_IDLE;
     h->blocked = 0U;
     h->cancelling = 0U;

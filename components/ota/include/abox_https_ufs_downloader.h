@@ -100,6 +100,9 @@ int ABoxHttpsUfs_Start(ABoxHttpsUfsDownloader *downloader,
 void ABoxHttpsUfs_SetDirectSupported(ABoxHttpsUfsDownloader *downloader,
                                      int supported);
 void ABoxHttpsUfs_Task(ABoxHttpsUfsDownloader *downloader);
+/* Physical modem reset invalidates HTTP/UFS handles; settle without issuing
+ * cleanup commands against handles from the previous modem session. */
+void ABoxHttpsUfs_OnModemReset(ABoxHttpsUfsDownloader *downloader);
 void ABoxHttpsUfs_OnEvent(ABoxHttpsUfsDownloader *downloader,
                           ABoxHttpsUfsAtEvent event, const uint8_t *data,
                           uint16_t length);

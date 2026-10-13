@@ -54,7 +54,7 @@ uint8_t EC800_AT_SendPayloadForOwner(Ec800AtCore_t *core,
 uint8_t EC800_AT_ForceSendPayloadForOwner(Ec800AtCore_t *core,
                                           Ec800AtOwner_t owner,
                                           const uint8_t *data, uint16_t len);
-void EC800_AT_RegisterUrcHandler(Ec800AtCore_t *core, Ec800AtOwner_t owner,
+uint8_t EC800_AT_RegisterUrcHandler(Ec800AtCore_t *core, Ec800AtOwner_t owner,
                                  Ec800AtUrcHandler_t handler, void *user);
 uint8_t EC800_AT_HasPending(Ec800AtCore_t *core, Ec800AtOwner_t owner);
 uint8_t EC800_AT_IsBusy(Ec800AtCore_t *core);

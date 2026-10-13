@@ -61,6 +61,9 @@ typedef struct {
   void (*observe_modem_line)(void *, const char *);
   void (*before_network_change)(void *);
   void (*state_changed)(void *, ABoxMqttRuntimeState, const char *);
+  /* Optional product safety policy (restore/readback/credential latch).
+   * False latches Block; a later true value alone does not unlock it. */
+  uint8_t (*recovery_allowed)(void *);
 } ABoxMqttRuntimePort;
 /* Adapter for the common product MQTT_Core API. The table must outlive the
  * runtime; lifecycle callbacks may use port.user to recover product context. */
@@ -107,7 +110,7 @@ typedef struct {
   ABoxMqttRuntimeState state;
   uint32_t started;
   uint8_t waiting, disconnect_step, active_tls, initialized, candidate_staged, recovering;
-  uint8_t blocked, tls_probe_supported, tls_probe_complete;
+  uint8_t blocked, tls_probe_supported, tls_probe_complete, safety_locked;
   ABoxMqttConfig requested, active;
   char host[64], username[32], password[64];
   char active_host[64], active_username[32], active_password[64];
@@ -125,7 +128,11 @@ int ABoxMqttRuntime_Restore(ABoxMqttRuntime *, const ABoxMqttConfig *, uint32_t)
  * and -1 when cleanup is uncertain. Poll must continue after a 0 result. */
 int ABoxMqttRuntime_StopFirst(ABoxMqttRuntime *, uint32_t);
 void ABoxMqttRuntime_Block(ABoxMqttRuntime *);
+/* Explicit Block is a safety latch. RecoveryComplete requires an explicit
+ * verified external repair; RDY never clears it. Internal communication
+ * blocks may recover after physical modem reset. */
 int ABoxMqttRuntime_RecoveryComplete(ABoxMqttRuntime *);
+uint8_t ABoxMqttRuntime_NeedsModemRecovery(const ABoxMqttRuntime *);
 ABoxMqttRuntimeState ABoxMqttRuntime_GetState(const ABoxMqttRuntime *);
 uint8_t ABoxMqttRuntime_IsTlsActive(const ABoxMqttRuntime *);
 void ABoxMqttRuntime_OnModemReset(ABoxMqttRuntime *, uint32_t);

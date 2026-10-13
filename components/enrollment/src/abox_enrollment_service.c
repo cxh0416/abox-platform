@@ -1,6 +1,18 @@
 #include "abox_enrollment_service.h"
 #include <string.h>
 
+int ABoxEnrollmentService_RequirePsk(ABoxEnrollmentService *s,
+                                    const uint8_t *ca_pem, uint32_t length)
+{
+    if (!s || !s->initialized) return 0;
+    if (ABoxEnrollmentEc800Http_SetCaPem(&s->http, ca_pem, length) &&
+        ABoxEnrollment_RequirePsk(&s->enrollment)) return 1;
+    (void)ABoxEc800At_Register(s->http.at, s->http.owner, NULL, NULL);
+    s->http.at = NULL;
+    s->initialized = 0U;
+    return 0;
+}
+
 static int ready(void *user)
 {
     ABoxEnrollmentService *s = (ABoxEnrollmentService *)user;
@@ -56,11 +68,12 @@ int ABoxEnrollmentService_Init(ABoxEnrollmentService *s, ABoxEc800At *at,
     s->port = *port;
     p = (ABoxEnrollmentPort){s, ready, identity, post, cancel_http,
                              start_trial, cancel_trial};
-    if (!ABoxEnrollmentEc800Http_Init(&s->http, at, owner, ca_file,
-                                       http_done, s) ||
-        !ABoxEnrollment_Init(&s->enrollment, &p, buffers, origin) ||
+    /* Validate the local contract before claiming an AT event slot. */
+    if (!ABoxEnrollment_Init(&s->enrollment, &p, buffers, origin) ||
         !ABoxEnrollment_SetExpectedTlsProfile(&s->enrollment,
-                                               tls_profile_id)) return 0;
+                                               tls_profile_id) ||
+        !ABoxEnrollmentEc800Http_Init(&s->http, at, owner, ca_file,
+                                       http_done, s)) return 0;
     s->initialized = 1U;
     if (port->needs_enrollment(port->user)) port->mqtt_pause(port->user, 1U);
     return 1;
@@ -92,5 +105,10 @@ void ABoxEnrollmentService_Cancel(ABoxEnrollmentService *s)
 }
 void ABoxEnrollmentService_AfterModemReset(ABoxEnrollmentService *s)
 {
-    if (s && s->initialized) ABoxEnrollmentEc800Http_AfterModemReset(&s->http);
+    if (!s || !s->initialized) return;
+    ABoxEnrollmentEc800Http_AfterModemReset(&s->http);
+    /* Covers an HTTP state whose AT operation had already disappeared. This
+     * is inert after http_done and preserves the existing request binding. */
+    ABoxEnrollment_OnHttp(&s->enrollment, 0U, 0U, 1,
+                          s->port.now_ms(s->port.user));
 }

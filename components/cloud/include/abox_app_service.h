@@ -12,7 +12,9 @@ extern "C" {
 typedef enum { ABOX_APP_NETWORK_CHANGED, ABOX_APP_MODEM_READY } ABoxAppServiceEvent;
 typedef struct {
     void *context;
-    void (*restart_rx)(void *);
+    /* Stop/abort must succeed before clearing RX cursors; return success only
+     * after ReceiveToIdle has started. A failed attempt is retried locally. */
+    int (*restart_rx)(void *);
     int (*enabled)(void *);
     void (*after_at)(void *, uint32_t);
     void (*before_enrollment)(void *, uint32_t);
@@ -37,7 +39,13 @@ typedef struct {
     ABoxEc800At *at;
     ABoxEc800Rx *rx;
     const ABoxAppServicePort *port;
-    uint8_t polling;
+    uint8_t polling : 1;
+    uint8_t reset_pending : 1;
+    uint8_t rx_failed : 1;
+    uint8_t rx_starting : 1;
+    /* 16 ms units, 128 ms retry. The owner polls within the half-wrap (524 s).
+     * Fits existing ARM struct padding: no additional product BSS. */
+    uint16_t rx_retry_at;
 } ABoxAppService;
 int ABoxAppService_Init(ABoxAppService *service, ABoxEc800At *at,
     ABoxEc800Rx *rx, const ABoxAppServicePort *port);

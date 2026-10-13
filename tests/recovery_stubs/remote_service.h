@@ -1,0 +1,1 @@
+void RemoteService_RevokeForNetworkChange(void);

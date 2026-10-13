@@ -78,6 +78,11 @@ static void fail(ABoxMqttRuntime *r, const char *x) {
   state(r, ABOX_MQTT_RUNTIME_FAILED, x);
 }
 static int start(ABoxMqttRuntime *r, uint32_t now) {
+  if (r->callbacks.recovery_allowed &&
+      !r->callbacks.recovery_allowed(r->callbacks.user)) {
+    ABoxMqttRuntime_Block(r);
+    return 1;
+  }
   r->started = now;
   if (!r->requested.tls_enabled) {
     if (!r->callbacks.apply_config(r->callbacks.user, &r->requested))
@@ -162,6 +167,11 @@ int ABoxMqttRuntime_Init(ABoxMqttRuntime *r, ABoxEc800At *at,
   return start(r, now);
 }
 int ABoxMqttRuntime_Stage(ABoxMqttRuntime *r, const ABoxMqttConfig *c) {
+  if (r && r->initialized && r->callbacks.recovery_allowed &&
+      !r->callbacks.recovery_allowed(r->callbacks.user)) {
+    ABoxMqttRuntime_Block(r);
+    return 0;
+  }
   if (!r || !r->initialized ||
       r->blocked || (r->state != ABOX_MQTT_RUNTIME_READY &&
        r->state != ABOX_MQTT_RUNTIME_UNENROLLED && r->state != ABOX_MQTT_RUNTIME_FAILED &&
@@ -277,7 +287,11 @@ int ABoxMqttRuntime_StopFirst(ABoxMqttRuntime *r, uint32_t now)
       r->state != ABOX_MQTT_RUNTIME_FAILED &&
       r->state != ABOX_MQTT_RUNTIME_PREPARED) return 0;
   if (r->lease.generation && !r->active_tls) {
-    ABoxMqttRuntime_Block(r);
+    /* An unbound/failed TLS lease is communication uncertainty, not an
+     * external restore/readback safety latch. Only physical reset releases it. */
+    r->blocked = 1U;
+    gate(r, 0);
+    state(r, ABOX_MQTT_RUNTIME_BLOCKED, "lease-recovery-required");
     return -1;
   }
   if (r->callbacks.before_network_change)
@@ -290,17 +304,28 @@ int ABoxMqttRuntime_StopFirst(ABoxMqttRuntime *r, uint32_t now)
 }
 void ABoxMqttRuntime_Block(ABoxMqttRuntime *r)
 {
-  if (!r || !r->initialized) return;
+  if (!r || !r->initialized || r->safety_locked) return;
   r->blocked = 1U;
+  r->safety_locked = 1U;
+  r->waiting = 0U;
+  /* Stop local waits without claiming an uncertain modem lease is released.
+   * Active cancellation uses the existing AT quarantine contract; the pin
+   * stays protected until a verified physical reset or explicit repair. */
+  ABoxMqttTls_Cancel(&r->mqtt_tls);
+  ABoxEc800Tls_Cancel(&r->tls, r->lease);
+  if (r->adapter.result == ABOX_ASYNC_PENDING)
+    (void)r->command.cancel(r->command.context, r->adapter.operation);
   gate(r, 0);
   state(r, ABOX_MQTT_RUNTIME_BLOCKED, "recovery-required");
 }
 int ABoxMqttRuntime_RecoveryComplete(ABoxMqttRuntime *r)
 {
   if (!r || !r->initialized || !r->blocked ||
+      (r->callbacks.recovery_allowed && !r->callbacks.recovery_allowed(r->callbacks.user)) ||
       r->adapter.at->quarantined || ABoxEc800At_IsBusy(r->adapter.at) ||
       r->lease.generation) return 0;
   r->blocked = 0U;
+  r->safety_locked = 0U;
   state(r, r->active.host ? ABOX_MQTT_RUNTIME_FAILED :
            ABOX_MQTT_RUNTIME_UNENROLLED, "recovery-complete");
   return 1;
@@ -373,6 +398,11 @@ static void stop_poll(ABoxMqttRuntime *r, uint32_t now)
 }
 void ABoxMqttRuntime_Poll(ABoxMqttRuntime *r, uint32_t now) {
   ABoxAsyncStatus s;
+  if (r && r->initialized && r->callbacks.recovery_allowed &&
+      !r->callbacks.recovery_allowed(r->callbacks.user)) {
+    if (!r->safety_locked) ABoxMqttRuntime_Block(r);
+    return;
+  }
   if (!r || !r->initialized ||
       r->state == ABOX_MQTT_RUNTIME_FAILED ||
       r->state == ABOX_MQTT_RUNTIME_UNENROLLED ||
@@ -488,6 +518,12 @@ void ABoxMqttRuntime_Poll(ABoxMqttRuntime *r, uint32_t now) {
   if (r->state == ABOX_MQTT_RUNTIME_PROBE_TLS) {
     s = r->command.poll(r->command.context, r->operation);
     if (s == ABOX_ASYNC_PENDING) return;
+    if (s == ABOX_ASYNC_OK && !r->tls_probe_supported) {
+      /* An observed unsupported context cannot be repaired by rail cycling. */
+      r->safety_locked = r->blocked = 1U;
+      fail(r, "tls-capability-unsupported");
+      return;
+    }
     if (s != ABOX_ASYNC_OK || !r->tls_probe_supported ||
         !ABoxEc800Tls_SetSupportedMask(&r->tls,
                                       r->options.supported_tls_context_mask)) {
@@ -554,23 +590,41 @@ void ABoxMqttRuntime_OnModemReset(ABoxMqttRuntime *r, uint32_t now) {
   ABoxMqttTls_OnModemReset(&r->mqtt_tls);
   memset(&r->lease, 0, sizeof(r->lease));
   r->active_tls = 0;
+  r->waiting = r->disconnect_step = r->recovering = 0U;
+  r->operation = 0U;
   gate(r, 0);
   if (r->callbacks.mqtt_modem_reset)
     r->callbacks.mqtt_modem_reset(r->callbacks.user);
-  if (stopping) {
+  if (r->callbacks.recovery_allowed &&
+      !r->callbacks.recovery_allowed(r->callbacks.user)) {
     ABoxMqttRuntime_Block(r);
     return;
   }
-  if (r->blocked) {
+  if (r->safety_locked) {
     state(r, ABOX_MQTT_RUNTIME_BLOCKED, "recovery-required");
+    return;
+  }
+  r->blocked = 0U; /* Physical reset closed the uncertain transport/lease. */
+  if (stopping) {
+    stop_complete(r);
     return;
   }
   if (!r->requested.host) {
     state(r, ABOX_MQTT_RUNTIME_FAILED, "await-enrollment");
     return;
   }
+  if (r->candidate_staged) {
+    state(r, ABOX_MQTT_RUNTIME_FAILED, "await-activation");
+    return; /* RDY is not authorization to activate a staged candidate. */
+  }
   if (!start(r, now))
     fail(r, "modem-reset");
+}
+uint8_t ABoxMqttRuntime_NeedsModemRecovery(const ABoxMqttRuntime *r) {
+  return r && r->initialized && !r->safety_locked && !r->candidate_staged && r->requested.host &&
+      (!r->callbacks.recovery_allowed || r->callbacks.recovery_allowed(r->callbacks.user)) &&
+      (r->state == ABOX_MQTT_RUNTIME_FAILED ||
+       r->state == ABOX_MQTT_RUNTIME_BLOCKED);
 }
 uint8_t ABoxMqttRuntime_IsReady(const ABoxMqttRuntime *r) {
   return r && r->state == ABOX_MQTT_RUNTIME_READY;

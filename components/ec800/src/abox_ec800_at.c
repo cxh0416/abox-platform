@@ -121,7 +121,11 @@ static void dispatch_owner(ABoxEc800At *at, ABoxEc800Owner owner,
                            uint16_t length)
 {
     ABoxEc800Handler *item = handler(at, owner);
-    if (item) item->callback(event, data, length, item->user);
+    if (item) {
+        ++at->notifying;
+        item->callback(event, data, length, item->user);
+        --at->notifying;
+    }
 }
 
 static void dispatch_line(ABoxEc800At *at, const uint8_t *data, uint16_t length)
@@ -133,12 +137,7 @@ static void dispatch_line(ABoxEc800At *at, const uint8_t *data, uint16_t length)
     if (prefix(data, "AT+QSSLCFG=\"psk\"") ||
         prefix(data, "+QSSLCFG: \"psk\"") || prefix(data, "AT+QMTCONN=")) return;
     if (length == 3U && memcmp(data, "RDY", 3U) == 0) {
-        static const uint8_t ready[] = "RDY";
-        ABoxEc800At_Reset(at);
-        for (i = 0U; i < ABOX_EC800_AT_HANDLER_SIZE; ++i)
-            if (at->handlers[i].callback)
-                at->handlers[i].callback(ABOX_EC800_EVENT_LINE, ready, 3U,
-                                         at->handlers[i].user);
+        ABoxEc800At_OnModemReset(at);
         return;
     }
     if (at->port.route_line) {
@@ -154,10 +153,12 @@ static void dispatch_line(ABoxEc800At *at, const uint8_t *data, uint16_t length)
         dispatch_owner(at, target, ABOX_EC800_EVENT_LINE, data, length);
         return;
     }
+    ++at->notifying;
     for (i = 0U; i < ABOX_EC800_AT_HANDLER_SIZE; ++i)
         if (at->handlers[i].callback)
             at->handlers[i].callback(ABOX_EC800_EVENT_LINE, data, length,
                                      at->handlers[i].user);
+    --at->notifying;
 }
 
 static void complete(ABoxEc800At *at, ABoxEc800Result result)
@@ -178,7 +179,12 @@ static void complete(ABoxEc800At *at, ABoxEc800Result result)
         at->raw_remaining = 0U;
     }
     memset(&at->active, 0, sizeof(at->active));
-    if (done) done(result, user);
+    ++at->generation;
+    if (done) {
+        ++at->notifying;
+        done(result, user);
+        --at->notifying;
+    }
 }
 
 static void emit_line(ABoxEc800At *at)
@@ -187,6 +193,7 @@ static void emit_line(ABoxEc800At *at)
     uint8_t *line;
     uint16_t length;
     int prompt;
+    uint32_t generation = at->generation;
     if (at->line_length == 0U) return;
     at->line[at->line_length] = '\0';
     line = at->line;
@@ -206,7 +213,7 @@ static void emit_line(ABoxEc800At *at)
         at->active_tick = tick(at);
     }
     dispatch_line(at, line, length);
-    if (at->active_valid) {
+    if (at->active_valid && generation == at->generation) {
         if (at->active_wait_payload && at->active.owner == ABOX_EC800_OWNER_MQTT &&
             prefix(line, "+QMTPUBEX:"))
             complete(at, ABOX_EC800_RESULT_OK);
@@ -279,6 +286,8 @@ static int next_command(const ABoxEc800At *at)
     return best;
 }
 
+static void terminate_all(ABoxEc800At *at, ABoxEc800Result result);
+
 static void start_next(ABoxEc800At *at)
 {
     int index = next_command(at);
@@ -287,13 +296,18 @@ static void start_next(ABoxEc800At *at)
     at->active = at->queue[index];
     memset(&at->queue[index], 0, sizeof(at->queue[index]));
     at->active_valid = 1U;
+    ++at->generation;
     at->active_payload_command = (uint8_t)payload_command(at->active.command);
     at->active_wait_payload = 0U;
     at->active_payload_sent = 0U;
     at->active_tick = tick(at);
     length = (uint16_t)strlen(at->active.command);
-    if (!write_bytes(at, (const uint8_t *)at->active.command, length, 300U))
-        complete(at, ABOX_EC800_RESULT_SEND_FAIL);
+    if (!write_bytes(at, (const uint8_t *)at->active.command, length, 300U)) {
+        /* A failed write may have transmitted a prefix. Later commands must
+         * not consume its untagged reply, including commands queued by done. */
+        at->quarantined = 1U;
+        terminate_all(at, ABOX_EC800_RESULT_SEND_FAIL);
+    }
 }
 
 int ABoxEc800At_Init(ABoxEc800At *at, const ABoxEc800AtPort *port)
@@ -315,54 +329,87 @@ int ABoxEc800At_SetMqttReceiver(ABoxEc800At *at,
     return 1;
 }
 
+static void terminate_all(ABoxEc800At *at, ABoxEc800Result result)
+{
+    struct { ABoxEc800DoneFn done; void *user; } pending[ABOX_EC800_AT_QUEUE_SIZE + 1U];
+    uint8_t count = 0U, i;
+    if (!at || at->terminating) return;
+    at->terminating = 1U;
+    if (at->active_valid && at->active.done) {
+        pending[count].done = at->active.done;
+        pending[count++].user = at->active.user;
+    }
+    for (i = 0U; i < ABOX_EC800_AT_QUEUE_SIZE; ++i) {
+        if (at->queue[i].used && at->queue[i].done) {
+            pending[count].done = at->queue[i].done;
+            pending[count++].user = at->queue[i].user;
+        }
+    }
+    /* Detach every operation before invoking any callback, including callbacks
+     * which cancel peers or request another reset. No command-sized snapshot. */
+    ABoxEc800At_CancelAll(at);
+    at->active_payload_command = at->active_wait_payload = at->active_payload_sent = 0U;
+    at->line_length = 0U;
+    ++at->generation;
+    for (i = 0U; i < count; ++i) pending[i].done(result, pending[i].user);
+    at->terminating = 0U;
+}
+
 void ABoxEc800At_Reset(ABoxEc800At *at)
 {
-    ABoxEc800AtPort port;
-    ABoxEc800MqttRxPort mqtt_rx;
-    ABoxEc800Handler handlers[ABOX_EC800_AT_HANDLER_SIZE];
-    uint32_t rx_overflow_count;
-    uint32_t line_overflow_count;
-    if (!at) return;
-    port = at->port;
-    mqtt_rx = at->mqtt_rx;
-    rx_overflow_count = at->rx_overflow_count;
-    line_overflow_count = at->line_overflow_count;
-    memcpy(handlers, at->handlers, sizeof(handlers));
-    memset(at, 0, sizeof(*at));
-    at->port = port;
-    at->mqtt_rx = mqtt_rx;
-    at->rx_overflow_count = rx_overflow_count;
-    at->line_overflow_count = line_overflow_count;
-    memcpy(at->handlers, handlers, sizeof(handlers));
+    if (!at || at->terminating) return;
+    terminate_all(at, ABOX_EC800_RESULT_ERROR);
+    at->raw_owner = ABOX_EC800_OWNER_NONE;
+    at->raw_remaining = at->active_tick = at->abort_guard_tick = 0U;
+    at->line_length = 0U;
+    at->line_drop_until_lf = at->quarantined = at->mqtt_rx_active = 0U;
+}
+
+void ABoxEc800At_OnModemReset(ABoxEc800At *at)
+{
+    static const uint8_t ready[] = "RDY";
+    uint8_t i;
+    if (!at || at->terminating) return;
+    ABoxEc800At_Reset(at);
+    at->terminating = 1U;
+    for (i=0U; i<ABOX_EC800_AT_HANDLER_SIZE; ++i)
+        if (at->handlers[i].callback)
+            at->handlers[i].callback(ABOX_EC800_EVENT_LINE, ready, 3U, at->handlers[i].user);
+    at->terminating = 0U;
 }
 
 void ABoxEc800At_Feed(ABoxEc800At *at, const uint8_t *data, uint16_t length)
 {
     uint16_t index;
-    if (!at || !data) return;
+    if (!at || !data || at->terminating || at->driving || at->notifying) return;
+    at->driving = 1U;
     for (index = 0U; index < length; ++index) {
         if (at->raw_remaining) {
             uint16_t take = (uint16_t)(length - index);
             if ((uint32_t)take > at->raw_remaining)
                 take = (uint16_t)at->raw_remaining;
-            dispatch_owner(at, at->raw_owner, ABOX_EC800_EVENT_RAW,
-                           data + index, take);
+            ABoxEc800Owner owner = at->raw_owner;
             at->raw_remaining -= take;
             index = (uint16_t)(index + take - 1U);
             if (!at->raw_remaining) at->raw_owner = ABOX_EC800_OWNER_NONE;
+            dispatch_owner(at, owner, ABOX_EC800_EVENT_RAW,
+                           data + index + 1U - take, take);
         } else {
             push(at, data[index]);
         }
     }
+    at->driving = 0U;
 }
 
 void ABoxEc800At_Task(ABoxEc800At *at)
 {
-    if (!at || at->quarantined) return;
+    if (!at || at->quarantined || at->terminating || at->driving || at->notifying) return;
+    at->driving = 1U;
     if (at->mqtt_rx_active) {
         at->mqtt_rx.poll(at->mqtt_rx.context, tick(at));
         if (at->mqtt_rx.locked(at->mqtt_rx.context)) {
             ABoxEc800At_Quarantine(at);
+            at->driving = 0U;
             return;
         }
     }
@@ -375,17 +422,21 @@ void ABoxEc800At_Task(ABoxEc800At *at)
         complete(at, ABOX_EC800_RESULT_TIMEOUT);
     }
     if (at->abort_guard_tick) {
-        if (tick(at) - at->abort_guard_tick < ABORT_GUARD_MS) return;
+        if (tick(at) - at->abort_guard_tick < ABORT_GUARD_MS) {
+            at->driving = 0U;
+            return;
+        }
         at->abort_guard_tick = 0U;
     }
     if (!at->quarantined) start_next(at);
+    at->driving = 0U;
 }
 
 void ABoxEc800At_Quarantine(ABoxEc800At *at)
 {
     if (!at) return;
     at->quarantined = 1U;
-    ABoxEc800At_CancelAll(at);
+    terminate_all(at, ABOX_EC800_RESULT_ERROR);
 }
 
 int ABoxEc800At_Submit(ABoxEc800At *at, const char *command,
@@ -394,7 +445,7 @@ int ABoxEc800At_Submit(ABoxEc800At *at, const char *command,
 {
     uint8_t i;
     uint16_t length;
-    if (!at || at->quarantined || !command || !*command || owner == ABOX_EC800_OWNER_NONE) return 0;
+    if (!at || at->quarantined || at->terminating || !command || !*command || owner == ABOX_EC800_OWNER_NONE) return 0;
     for (i = 0U; i < ABOX_EC800_AT_QUEUE_SIZE; ++i) {
         if (at->queue[i].used) continue;
         memset(&at->queue[i], 0, sizeof(at->queue[i]));
@@ -426,7 +477,11 @@ int ABoxEc800At_SendPayload(ABoxEc800At *at, ABoxEc800Owner owner,
         at->active.owner != owner || !at->active_payload_command ||
         !at->active_wait_payload || at->active_payload_sent)
         return 0;
-    if (!write_bytes(at, data, length, 1000U)) return 0;
+    if (!write_bytes(at, data, length, 1000U)) {
+        at->quarantined = 1U;
+        terminate_all(at, ABOX_EC800_RESULT_SEND_FAIL);
+        return 0;
+    }
     at->active_wait_payload = 1U;
     at->active_payload_sent = 1U;
     at->active_tick = tick(at);
@@ -447,7 +502,7 @@ int ABoxEc800At_ForcePayload(ABoxEc800At *at, ABoxEc800Owner owner,
 int ABoxEc800At_BeginRaw(ABoxEc800At *at, ABoxEc800Owner owner,
                          uint32_t length)
 {
-    if (!at || owner == ABOX_EC800_OWNER_NONE || !length ||
+    if (!at || at->terminating || at->quarantined || owner == ABOX_EC800_OWNER_NONE || !length ||
         length > ABOX_EC800_AT_RAW_MAX || at->raw_remaining)
         return 0;
     at->raw_owner = owner;
@@ -460,7 +515,7 @@ int ABoxEc800At_Register(ABoxEc800At *at, ABoxEc800Owner owner,
 {
     uint8_t i;
     ABoxEc800Handler *item;
-    if (!at || owner == ABOX_EC800_OWNER_NONE) return 0;
+    if (!at || at->terminating || at->notifying || owner == ABOX_EC800_OWNER_NONE) return 0;
     item = handler(at, owner);
     if (item) {
         item->callback = callback;
@@ -523,6 +578,7 @@ void ABoxEc800At_Cancel(ABoxEc800At *at, ABoxEc800Owner owner)
             at->abort_guard_tick = tick(at);
         }
         at->active_valid = 0U;
+        ++at->generation;
         memset(&at->active, 0, sizeof(at->active));
     }
     if (at->raw_owner == owner) {
@@ -546,10 +602,8 @@ void ABoxEc800At_CancelAll(ABoxEc800At *at)
 void ABoxEc800At_AbortAll(ABoxEc800At *at, ABoxEc800Result result)
 {
     if (!at) return;
-    memset(at->queue, 0, sizeof(at->queue));
-    at->raw_owner = ABOX_EC800_OWNER_NONE;
-    at->raw_remaining = 0U;
-    if (at->active_valid) complete(at, result);
+    at->quarantined = 1U;
+    terminate_all(at, result);
 }
 
 void ABoxEc800At_SetRxOverflowCount(ABoxEc800At *at, uint32_t count)

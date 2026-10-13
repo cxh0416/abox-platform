@@ -28,9 +28,9 @@ uint8_t EC800_AT_ForceSendPayloadForOwner(Ec800AtCore_t *core,
                                           Ec800AtOwner_t owner,
                                           const uint8_t *data, uint16_t len)
 { return (uint8_t)ABoxEc800At_ForcePayload(core, owner, data, len); }
-void EC800_AT_RegisterUrcHandler(Ec800AtCore_t *core, Ec800AtOwner_t owner,
+uint8_t EC800_AT_RegisterUrcHandler(Ec800AtCore_t *core, Ec800AtOwner_t owner,
                                  Ec800AtUrcHandler_t handler, void *user)
-{ (void)ABoxEc800At_Register(core, owner, handler, user); }
+{ return (uint8_t)ABoxEc800At_Register(core, owner, handler, user); }
 uint8_t EC800_AT_HasPending(Ec800AtCore_t *core, Ec800AtOwner_t owner)
 { return (uint8_t)ABoxEc800At_HasPending(core, owner); }
 uint8_t EC800_AT_IsBusy(Ec800AtCore_t *core)

@@ -53,7 +53,6 @@ typedef struct {
     ABoxBootV2AppPort port;
     ABoxBootV2AppConfig cfg;
     State state;
-    uint8_t bound;
     uint8_t provisioned;
     uint8_t busy;
     uint8_t seeding;
@@ -102,6 +101,8 @@ typedef struct {
 /* Product linker scripts place this reset-scratch context after the fixed
  * fault mailbox so it does not consume normal BSS. */
 static Context g __attribute__((section(".ota_work")));
+/* Unlike OTA scratch, normal BSS is cleared by every App startup. */
+static uint8_t g_initialized;
 const char g_abox_boot_v2_stable_seed_source_marker[]
     __attribute__((used)) = "ABOX_STABLE_SEED_SOURCE=" ABOX_BOOT_V2_STABLE_SEED_SOURCE;
 
@@ -161,12 +162,14 @@ static uint32_t crc_update(uint32_t crc, const uint8_t *data, uint32_t length)
     return crc;
 }
 
-static int valid_config(void)
+static int valid_config(const ABoxBootV2AppConfig *config)
 {
-    return g.cfg.ota_origin && strncmp(g.cfg.ota_origin, "https://", 8U) == 0 &&
-           g.cfg.revision_product && g.cfg.artifact_name && g.cfg.version_prefix &&
-           g.cfg.running_version && g.cfg.ca_pem && g.cfg.ca_pem_length &&
-           g.cfg.app_size && g.cfg.app_size <= g.cfg.app_max_size;
+    return config->ota_origin && strncmp(config->ota_origin, "https://", 8U) == 0 &&
+           config->revision_product && config->artifact_name && config->version_prefix &&
+           config->running_version && config->running_version[0] &&
+           strlen(config->running_version) < ABOX_BOOT_V2_APP_VERSION_SIZE &&
+           config->ca_pem && config->ca_pem_length &&
+           config->app_size && config->app_size <= config->app_max_size;
 }
 
 static int provision_state(State state)
@@ -221,6 +224,7 @@ static const char *download_stage(void)
 
 static void downloader_bridge_done(ABoxBootV2AtResult result, void *user)
 {
+    if (!g_initialized) return;
     ABoxHttpsUfsDoneFn done = g.downloader_done;
     void *done_user = g.downloader_done_user;
     (void)user;
@@ -797,6 +801,7 @@ static void command_done(ABoxBootV2AtResult result, void *user)
 {
     char command[64];
     (void)user;
+    if (!g_initialized) return;
 
     if (result == ABOX_BOOT_V2_AT_OK) {
         command_succeeded();
@@ -855,6 +860,13 @@ static void event_received(ABoxBootV2AtEvent event, const uint8_t *data,
 {
     char line[96];
     (void)user;
+    if (!g_initialized) return;
+
+    if (event == ABOX_BOOT_V2_AT_LINE && length == 3U && data &&
+        memcmp(data, "RDY", 3U) == 0) {
+        ABoxBootV2App_OnModemReset();
+        return;
+    }
 
     if (g.state == ST_DOWNLOADER) {
         ABoxHttpsUfs_OnEvent(&g.downloader, (ABoxHttpsUfsAtEvent)event,
@@ -966,6 +978,8 @@ int ABoxBootV2App_Init(const ABoxBootV2AppPort *port,
 {
     ABoxHttpsUfsPort downloader_port;
     ABoxHttpsUfsConfig downloader_config;
+    /* Failed initialization must also invalidate an earlier idle binding. */
+    g_initialized = 0U;
     if (!port || !config || !port->submit || !port->register_events ||
         !port->mqtt_client_index ||
         !port->transfer_buffer ||
@@ -973,14 +987,13 @@ int ABoxBootV2App_Init(const ABoxBootV2AppPort *port,
         (port->mqtt_stop && (!port->workspace_borrow ||
                              !port->workspace_return)) ||
         (!port->mqtt_stop && (port->workspace_borrow ||
-                              port->workspace_return)))
+                              port->workspace_return)) || !valid_config(config))
         return 0;
 
     memset(&g, 0, sizeof(g));
     g.port = *port;
     g.cfg = *config;
     g.direct_supported = 1U;
-    g.bound = 1U;
     g.state = ST_WAIT;
     memset(&downloader_port, 0, sizeof(downloader_port));
     downloader_port.tick_ms = downloader_tick;
@@ -1001,19 +1014,39 @@ int ABoxBootV2App_Init(const ABoxBootV2AppPort *port,
     if (!ABoxHttpsUfs_Init(&g.downloader, &downloader_port,
                            &downloader_config))
         return 0;
-    port->register_events(port->context, event_received, 0);
-    return valid_config();
+    if (!port->register_events(port->context, event_received, 0)) return 0;
+    g_initialized = 1U;
+    return 1;
+}
+
+int ABoxBootV2App_IsInitialized(void)
+{
+    return g_initialized;
+}
+
+void ABoxBootV2App_OnModemReset(void)
+{
+    if (!g_initialized) return;
+    ABoxHttpsUfs_OnModemReset(&g.downloader);
+    if (g.busy) download_fail(ABOX_BOOT_V2_APP_ERROR_UFS);
+    else if (g.port.cancel) g.port.cancel(g.port.context);
+    g.provisioned = g.handle_valid = g.payload_sent = 0U;
+    g.provision_retry_count = 0U;
+    g.stable_checked = g.seed_attempted = 0U;
+    g.state = ST_RETRY;
+    g.retry_due = now() + ABOX_BOOT_V2_PROVISION_RETRY_1_MS;
 }
 
 int ABoxBootV2App_BeginProvisioning(void)
 {
-    if (!g.bound || g.busy) return 0;
+    if (!g_initialized || g.busy) return 0;
     start_provisioning();
     return g.state == ST_PROBE || g.state == ST_RETRY || g.state == ST_ERROR;
 }
 
 int ABoxBootV2App_Start(const ABoxBootV2AppRequest *request)
 {
+    if (!g_initialized) return 0;
     return begin_request(request, 0U);
 }
 
@@ -1079,6 +1112,8 @@ void ABoxBootV2App_Task(void)
     char command[128];
     ABoxBootV2Record state;
     uint32_t downloader_error;
+
+    if (!g_initialized) return;
 
     if ((g.state == ST_ERROR || g.state == ST_RETRY) &&
         (int32_t)(now() - g.retry_due) >= 0) {
@@ -1241,35 +1276,36 @@ void ABoxBootV2App_Task(void)
 
 int ABoxBootV2App_IsProvisioned(void)
 {
-    return g.provisioned;
+    return g_initialized && g.provisioned;
 }
 
 int ABoxBootV2App_IsReady(void)
 {
     ABoxBootV2Record state;
     ABoxBootV2Descriptor descriptor;
-    return g.provisioned && ABoxBootV2_DescriptorRead(&descriptor) &&
+    return g_initialized && g.provisioned && ABoxBootV2_DescriptorRead(&descriptor) &&
            ABoxBootV2_DescriptorReady(&descriptor) && ABoxBootV2_StateLoad(&state) &&
            state.stable_slot <= 1U && state.stable_image_size != 0U;
 }
 
 int ABoxBootV2App_IsBusy(void)
 {
-    return g.busy;
+    return g_initialized && g.busy;
 }
 
 uint32_t ABoxBootV2App_LastError(void)
 {
-    return g.last_error;
+    return g_initialized ? g.last_error : ABOX_BOOT_V2_APP_ERROR_STATE;
 }
 
 const char *ABoxBootV2App_TargetVersion(void)
 {
-    return g.version;
+    return g_initialized ? g.version : "";
 }
 
 const char *ABoxBootV2App_Phase(void)
 {
+    if (!g_initialized) return "INIT_FAILED";
     if (g.busy && g.seeding) return "SEEDING_LOCAL";
     if (g.state == ST_WAIT) return "WAIT_MODEM";
     if (g.state == ST_RETRY) return "RETRY_WAIT";
@@ -1283,7 +1319,7 @@ const char *ABoxBootV2App_Phase(void)
 
 const ABoxHttpsUfsMetrics *ABoxBootV2App_DownloadMetrics(void)
 {
-    return ABoxHttpsUfs_Metrics(&g.downloader);
+    return g_initialized ? ABoxHttpsUfs_Metrics(&g.downloader) : NULL;
 }
 
 const char *ABoxBootV2App_StableSeedSource(void)
@@ -1293,6 +1329,7 @@ const char *ABoxBootV2App_StableSeedSource(void)
 
 int ABoxBootV2App_TakeInstallReady(void)
 {
+    if (!g_initialized) return 0;
     int value = g.install_ready;
     g.install_ready = 0U;
     return value;
@@ -1300,6 +1337,10 @@ int ABoxBootV2App_TakeInstallReady(void)
 
 int ABoxBootV2App_TakeFailure(uint32_t *error)
 {
+    if (!g_initialized) {
+        if (error) *error = ABOX_BOOT_V2_APP_ERROR_STATE;
+        return 0;
+    }
     int value = g.failure_pending;
     g.failure_pending = 0U;
     if (error) *error = g.last_error;

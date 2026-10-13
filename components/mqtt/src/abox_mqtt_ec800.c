@@ -38,11 +38,13 @@ static void done(ABoxEc800Result result, void *user)
 {
     ABoxMqttEc800 *m = (ABoxMqttEc800 *)user;
     if (!m || !m->initialized) return;
+    m->entered_ms = m->at->active_tick;
     m->command_pending = 0U;
     m->command_result = result == ABOX_EC800_RESULT_OK ||
                         result == ABOX_EC800_RESULT_SEND_OK ? CMD_OK : CMD_FAILED;
     if (m->command_result == CMD_FAILED) {
         ++m->counters.command_failed;
+        if (m->publish_active) published(m, ABOX_MQTT_EC800_PUBLISH_FAILED);
         if (result == ABOX_EC800_RESULT_TIMEOUT)
             ABoxEc800At_Quarantine(m->at);
         if (m->state == ABOX_MQTT_EC800_READY)
@@ -58,7 +60,19 @@ static int submit(ABoxMqttEc800 *m, const char *command, uint32_t timeout)
         return 0;
     m->command_pending = 1U;
     m->command_result = CMD_NONE;
+    m->entered_ms = m->at->port.tick_ms(m->at->port.context);
     return 1;
+}
+
+static int command_expired(ABoxMqttEc800 *m, uint32_t now, uint32_t timeout)
+{
+    if (m->command_pending) {
+        /* The AT owner supplies the actual wire start, not queue admission.
+         * Queued commands terminate through the AT completion contract. */
+        if (!ABoxEc800At_IsActive(m->at, ABOX_EC800_OWNER_MQTT)) return 0;
+        m->entered_ms = m->at->active_tick;
+    }
+    return (uint32_t)(now - m->entered_ms) >= timeout;
 }
 
 static void message(void *user, const uint8_t *topic, size_t topic_length,
@@ -310,17 +324,20 @@ static void configure(ABoxMqttEc800 *m, uint32_t now)
 {
     char command[128];
     if (!m->command_pending && m->command_result == CMD_NONE) {
+        if (command_expired(m, now, m->config.command_timeout_ms)) {
+            fail_closed(m, now); return;
+        }
         switch (m->step) {
         case CFG_ECHO: strcpy(command, "ATE0"); break;
         case CFG_RECV:
             snprintf(command, sizeof(command), "AT+QMTCFG=\"recv/mode\",%u,0,0",
                      m->config.client_index); break;
         case CFG_VERSION:
-            if (!m->config.mqtt_version) { ++m->step; return; }
+            if (!m->config.mqtt_version) { ++m->step; m->entered_ms = now; return; }
             snprintf(command, sizeof(command), "AT+QMTCFG=\"version\",%u,%u",
                      m->config.client_index, m->config.mqtt_version); break;
         case CFG_PDPCID:
-            if (!m->config.pdp_context_id) { ++m->step; return; }
+            if (!m->config.pdp_context_id) { ++m->step; m->entered_ms = now; return; }
             snprintf(command, sizeof(command), "AT+QMTCFG=\"pdpcid\",%u,%u",
                      m->config.client_index, m->config.pdp_context_id); break;
         case CFG_REG: strcpy(command, "AT+CEREG?"); m->registered = 0U; break;
@@ -334,14 +351,14 @@ static void configure(ABoxMqttEc800 *m, uint32_t now)
         case CFG_PDP_VERIFY: strcpy(command, "AT+QIACT?"); m->pdp_active = 0U; break;
         default: change(m, ABOX_MQTT_EC800_OPENING, now); return;
         }
-        if (!submit(m, command, m->config.command_timeout_ms) &&
-            (uint32_t)(now - m->entered_ms) >= m->config.command_timeout_ms)
-            fail_closed(m, now);
+        /* Rejected admission keeps this step and its bounded queue deadline. */
+        if (!submit(m, command, m->config.command_timeout_ms)) return;
         return;
     }
     if (m->command_result == CMD_FAILED) { fail_closed(m, now); return; }
     if (m->command_result != CMD_OK) return;
     m->command_result = CMD_NONE;
+    m->entered_ms = now;
     switch (m->step) {
     case CFG_REG:
         if (!m->registered) { fail_closed(m, now); return; }
@@ -365,9 +382,12 @@ static void opening(ABoxMqttEc800 *m, uint32_t now)
 {
     char command[128];
     if (!m->command_pending && m->command_result == CMD_NONE) {
+        if (command_expired(m, now, m->config.open_timeout_ms)) {
+            fail_closed(m, now); return;
+        }
         snprintf(command, sizeof(command), "AT+QMTOPEN=%u,\"%s\",%u",
                  m->config.client_index, m->config.host, m->config.port);
-        (void)submit(m, command, m->config.open_timeout_ms);
+        if (!submit(m, command, m->config.open_timeout_ms)) return;
     }
     if (m->urc_pending == URC_FAILED && m->urc_result == 1U &&
         m->command_result == CMD_OK && !m->command_pending) {
@@ -378,7 +398,7 @@ static void opening(ABoxMqttEc800 *m, uint32_t now)
     }
     if (m->urc_pending == URC_FAILED && m->command_pending) return;
     if (m->command_result == CMD_FAILED || m->urc_pending == URC_FAILED ||
-        (uint32_t)(now - m->entered_ms) >= m->config.open_timeout_ms) {
+        command_expired(m, now, m->config.open_timeout_ms)) {
         fail_closed(m, now); return;
     }
     if (m->urc_pending == URC_OK && m->command_result == CMD_OK)
@@ -389,6 +409,9 @@ static void connecting(ABoxMqttEc800 *m, uint32_t now)
 {
     char command[240];
     if (!m->command_pending && m->command_result == CMD_NONE) {
+        if (command_expired(m, now, m->config.connect_timeout_ms)) {
+            fail_closed(m, now); return;
+        }
         if (m->config.username && *m->config.username)
             snprintf(command, sizeof(command), "AT+QMTCONN=%u,\"%s\",\"%s\",\"%s\"",
                      m->config.client_index, m->config.client_id,
@@ -396,10 +419,10 @@ static void connecting(ABoxMqttEc800 *m, uint32_t now)
         else
             snprintf(command, sizeof(command), "AT+QMTCONN=%u,\"%s\"",
                      m->config.client_index, m->config.client_id);
-        (void)submit(m, command, m->config.connect_timeout_ms);
+        if (!submit(m, command, m->config.connect_timeout_ms)) return;
     }
     if (m->command_result == CMD_FAILED || m->urc_pending == URC_FAILED ||
-        (uint32_t)(now - m->entered_ms) >= m->config.connect_timeout_ms) {
+        command_expired(m, now, m->config.connect_timeout_ms)) {
         fail_closed(m, now); return;
     }
     if (m->urc_pending == URC_OK && m->command_result == CMD_OK) {
@@ -415,16 +438,19 @@ static void subscribing(ABoxMqttEc800 *m, uint32_t now)
         change(m, ABOX_MQTT_EC800_READY, now); return;
     }
     if (!m->command_pending && m->command_result == CMD_NONE) {
-        ++m->next_sub_msg_id;
-        if (!m->next_sub_msg_id) ++m->next_sub_msg_id;
-        m->pending_sub_msg_id = m->next_sub_msg_id;
+        uint16_t message_id = (uint16_t)(m->next_sub_msg_id + 1U);
+        if (command_expired(m, now, m->config.subscribe_timeout_ms)) {
+            fail_closed(m, now); return;
+        }
+        if (!message_id) ++message_id;
         snprintf(command, sizeof(command), "AT+QMTSUB=%u,%u,\"%s\",1",
-                 m->config.client_index, m->pending_sub_msg_id,
+                 m->config.client_index, message_id,
                  m->config.subscriptions[m->subscription_index]);
-        (void)submit(m, command, m->config.subscribe_timeout_ms);
+        if (!submit(m, command, m->config.subscribe_timeout_ms)) return;
+        m->pending_sub_msg_id = m->next_sub_msg_id = message_id;
     }
     if (m->command_result == CMD_FAILED || m->urc_pending == URC_FAILED ||
-        (uint32_t)(now - m->entered_ms) >= m->config.subscribe_timeout_ms) {
+        command_expired(m, now, m->config.subscribe_timeout_ms)) {
         fail_closed(m, now); return;
     }
     if (m->urc_pending == URC_OK && m->command_result == CMD_OK) {
@@ -442,11 +468,10 @@ static void closing(ABoxMqttEc800 *m, uint32_t now)
     if (!m->command_pending && m->command_result == CMD_NONE) {
         snprintf(command, sizeof(command), m->close_step ? "AT+QMTCLOSE=%u" :
                  "AT+QMTDISC=%u", m->config.client_index);
-        if (!submit(m, command, m->config.command_timeout_ms) &&
-            (uint32_t)(now - m->entered_ms) >= m->config.command_timeout_ms) {
+        if (command_expired(m, now, m->config.command_timeout_ms)) {
             ABoxEc800At_Quarantine(m->at);
             change(m, ABOX_MQTT_EC800_BLOCKED, now);
-        }
+        } else if (!submit(m, command, m->config.command_timeout_ms)) return;
         return;
     }
     if (m->command_result == CMD_FAILED && m->close_step && m->close_step != 2U) {
@@ -470,6 +495,9 @@ void ABoxMqttEc800_Poll(ABoxMqttEc800 *m, uint32_t now)
     if (!m || !m->initialized) return;
     ABoxMqttEc800Rx_Poll(&m->rx, now);
     if (m->at->quarantined || ABoxMqttEc800Rx_IsLocked(&m->rx)) {
+        /* The publish ACK wait can outlive its AT command (SEND OK). Settle
+         * it even if safety policy prevents immediate physical recovery. */
+        if (m->publish_active) published(m, ABOX_MQTT_EC800_PUBLISH_FAILED);
         if (m->state != ABOX_MQTT_EC800_BLOCKED)
             change(m, ABOX_MQTT_EC800_BLOCKED, now);
         return;
@@ -522,7 +550,12 @@ void ABoxMqttEc800_Poll(ABoxMqttEc800 *m, uint32_t now)
 
 void ABoxMqttEc800_SetSecurityReady(ABoxMqttEc800 *m, uint8_t ready)
 {
-    if (m) m->security_ready = ready ? 1U : 0U;
+    if (!m) return;
+    m->security_ready = ready ? 1U : 0U;
+    /* Runtime may stop polling the transport after a safety latch. Resolve
+     * its publish receipt here, including an ACK wait with no active AT. */
+    if (!m->security_ready && m->publish_active)
+        published(m, ABOX_MQTT_EC800_PUBLISH_FAILED);
 }
 
 void ABoxMqttEc800_SetPausedSoft(ABoxMqttEc800 *m, uint8_t paused)

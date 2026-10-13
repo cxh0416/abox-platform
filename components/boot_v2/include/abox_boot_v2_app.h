@@ -45,7 +45,8 @@ typedef struct {
     int (*has_pending)(void *context);
     int (*is_active)(void *context);
     void (*cancel)(void *context);
-    void (*register_events)(void *context, ABoxBootV2AtEventFn callback, void *user);
+    /* Return success only when the event owner is registered. */
+    int (*register_events)(void *context, ABoxBootV2AtEventFn callback, void *user);
     void (*mqtt_pause)(void *context, uint8_t paused);
     uint8_t (*mqtt_client_index)(void *context);
     void (*log)(void *context, uint8_t level, const char *message);
@@ -73,7 +74,14 @@ typedef struct {
     uint32_t app_max_size;
 } ABoxBootV2AppConfig;
 
+/* Startup/idle initialization only; callers must quiesce an active session
+ * before rebinding. Every attempt invalidates readiness, including invalid
+ * arguments. Until success, tasks/callbacks are inert and queries return safe
+ * defaults (INIT_FAILED, ERROR_STATE, no metrics). */
 int ABoxBootV2App_Init(const ABoxBootV2AppPort *port, const ABoxBootV2AppConfig *config);
+int ABoxBootV2App_IsInitialized(void);
+/* Called after physical modem reset (also handled by the RDY observer). */
+void ABoxBootV2App_OnModemReset(void);
 int ABoxBootV2App_BeginProvisioning(void);
 int ABoxBootV2App_Start(const ABoxBootV2AppRequest *request);
 void ABoxBootV2App_Task(void);

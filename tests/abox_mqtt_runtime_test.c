@@ -287,8 +287,22 @@ int main(void)
         assert(ABoxMqttRuntime_IsReady(&reset_runtime));
         assert(ABoxMqttRuntime_StopFirst(&reset_runtime, 4U) == 0);
         ABoxMqttRuntime_OnModemReset(&reset_runtime, 5U);
-        assert(ABoxMqttRuntime_GetState(&reset_runtime) == ABOX_MQTT_RUNTIME_BLOCKED);
+        assert(ABoxMqttRuntime_GetState(&reset_runtime) == ABOX_MQTT_RUNTIME_UNENROLLED);
+        assert(ABoxMqttRuntime_Stage(&reset_runtime, &next));
+        ABoxMqttRuntime_Block(&reset_runtime); /* explicit restore/readback safety latch */
+        ABoxEc800At_Feed(&reset_at, (const uint8_t *)"RDY\r\nRDY\r\n", 10U);
+        assert(reset_runtime.state == ABOX_MQTT_RUNTIME_BLOCKED && reset_runtime.safety_locked);
+        assert(!ABoxMqttRuntime_NeedsModemRecovery(&reset_runtime));
         assert(!ABoxMqttRuntime_Stage(&reset_runtime, &next));
+        assert(reset_fixture.paused && !reset_fixture.security);
+        assert(ABoxMqttRuntime_RecoveryComplete(&reset_runtime));
+        assert(ABoxMqttRuntime_Apply(&reset_runtime, &first, 6U));
+        reset_runtime.state = ABOX_MQTT_RUNTIME_BLOCKED;
+        reset_runtime.blocked = 1U; /* uncertain communication cleanup */
+        assert(ABoxMqttRuntime_NeedsModemRecovery(&reset_runtime));
+        ABoxEc800At_Feed(&reset_at, (const uint8_t *)"RDY\r\n", 5U);
+        assert(!reset_runtime.blocked && !reset_runtime.waiting);
+        assert(reset_runtime.state == ABOX_MQTT_RUNTIME_PREPARED);
     }
     {
         Fixture delegated = {0};
@@ -380,8 +394,35 @@ int main(void)
             }
         }
         assert(unsupported_runtime.state == ABOX_MQTT_RUNTIME_FAILED);
+        assert(unsupported_runtime.safety_locked && !ABoxMqttRuntime_NeedsModemRecovery(&unsupported_runtime));
         assert(unsupported.paused && !unsupported.security);
         assert(!strstr(unsupported.last_command, "QMTOPEN"));
+        ABoxEc800At_OnModemReset(&unsupported_at);
+        assert(unsupported_runtime.state==ABOX_MQTT_RUNTIME_BLOCKED);
+        assert(unsupported_runtime.safety_locked && unsupported.paused && !unsupported.security);
+    }
+    {
+        Fixture comm = {0}; ABoxEc800At comm_at; ABoxMqttRuntime comm_runtime;
+        const ABoxMqttConfig secure = {"secure.example", 8883U, "u", "p", 1U, 0U};
+        options.probe_tls_capability=0;
+        at_port.context=&comm; port.user=&comm;
+        port.mqtt_stop=0; port.mqtt_modem_reset=0;
+        assert(ABoxEc800At_Init(&comm_at,&at_port));
+        assert(ABoxMqttRuntime_Init(&comm_runtime,&comm_at,&port,&options,&secure,0));
+        ABoxMqttRuntime_Poll(&comm_runtime,1);
+        ABoxEc800At_Task(&comm_at);
+        ABoxEc800At_Feed(&comm_at,(const uint8_t *)"OK\r\n",4);
+        ABoxMqttRuntime_Poll(&comm_runtime,2);
+        ABoxMqttRuntime_Poll(&comm_runtime,3); ABoxEc800At_Task(&comm_at);
+        ABoxEc800At_Feed(&comm_at,(const uint8_t *)"ERROR\r\n",7);
+        ABoxMqttRuntime_Poll(&comm_runtime,4);
+        assert(comm_runtime.state==ABOX_MQTT_RUNTIME_FAILED && comm_runtime.lease.generation);
+        assert(ABoxMqttRuntime_StopFirst(&comm_runtime,4)==-1);
+        assert(comm_runtime.blocked && !comm_runtime.safety_locked);
+        assert(ABoxMqttRuntime_NeedsModemRecovery(&comm_runtime));
+        ABoxEc800At_OnModemReset(&comm_at);
+        assert(!comm_runtime.lease.generation && !comm_runtime.blocked);
+        assert(comm_runtime.state==ABOX_MQTT_RUNTIME_WAIT_CA);
     }
     return 0;
 }

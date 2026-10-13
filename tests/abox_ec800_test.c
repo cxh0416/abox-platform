@@ -295,8 +295,118 @@ static void test_credentials_never_reach_line_observers(void)
     assert(observed == 1U);
 }
 
+typedef struct { ABoxEc800At *at; unsigned calls; } Termination;
+static void terminated(ABoxEc800Result result, void *user)
+{
+    Termination *t = user;
+    assert(result == ABOX_EC800_RESULT_ERROR);
+    assert(!ABoxEc800At_IsBusy(t->at));
+    ++t->calls;
+    assert(!ABoxEc800At_Submit(t->at, "AT", 29U,
+        ABOX_EC800_PRIORITY_NORMAL, 100U, terminated, t));
+    assert(!ABoxEc800At_Register(t->at, 29U, event, NULL));
+    ABoxEc800At_Task(t->at);
+    ABoxEc800At_Feed(t->at, (const uint8_t *)"RDY\r\nOK\r\n", 9U);
+    ABoxEc800At_AbortAll(t->at, result);
+    ABoxEc800At_Reset(t->at);
+}
+static void test_bulk_termination(void)
+{
+    unsigned mode, active, i;
+    for (mode = 0; mode < 3; ++mode) for (active = 0; active < 2; ++active) {
+        ABoxEc800At at;
+        ABoxEc800AtPort port = {0, tick_ms, write_data, 0};
+        Termination ops[ABOX_EC800_AT_QUEUE_SIZE + 1U];
+        assert(ABoxEc800At_Init(&at, &port));
+        for (i = 0; i < ABOX_EC800_AT_QUEUE_SIZE + active; ++i) {
+            ops[i] = (Termination){&at, 0};
+            assert(ABoxEc800At_Submit(&at, "AT", (ABoxEc800Owner)(20U+i),
+                ABOX_EC800_PRIORITY_NORMAL, 1000U, terminated, &ops[i]));
+            if (!i && active) ABoxEc800At_Task(&at);
+        }
+        for (i = 0; i < 2; ++i) {
+            if (!mode) ABoxEc800At_Feed(&at, (const uint8_t *)"RDY\r\nOK\r\n", 9U);
+            else if (mode == 1) ABoxEc800At_AbortAll(&at, ABOX_EC800_RESULT_ERROR);
+            else ABoxEc800At_Quarantine(&at); /* RX parser/overflow isolation */
+        }
+        for (i = 0; i < ABOX_EC800_AT_QUEUE_SIZE + active; ++i) assert(ops[i].calls == 1U);
+        assert(!ABoxEc800At_IsBusy(&at));
+        if (mode) assert(at.quarantined);
+        ABoxEc800At_Reset(&at);
+        assert(!at.quarantined);
+        g_done_count = 0U;
+        assert(ABoxEc800At_Submit(&at, "AT", 20U, ABOX_EC800_PRIORITY_NORMAL, 1000U, done, 0));
+        ABoxEc800At_Task(&at);
+        ABoxEc800At_Feed(&at, (const uint8_t *)"OK\r\n", 4U);
+        assert(g_done_count == 1U && g_done_result == ABOX_EC800_RESULT_OK);
+    }
+}
+static void reset_during_raw(ABoxEc800Event e, const uint8_t *d, uint16_t n, void *user)
+{
+    (void)d; (void)n;
+    if (e == ABOX_EC800_EVENT_RAW) ABoxEc800At_Reset(user);
+}
+static void test_raw_reset_does_not_underflow(void)
+{
+    ABoxEc800At at;
+    ABoxEc800AtPort port = {0, tick_ms, write_data, 0};
+    assert(ABoxEc800At_Init(&at, &port));
+    assert(ABoxEc800At_Register(&at, 20U, reset_during_raw, &at));
+    assert(ABoxEc800At_BeginRaw(&at, 20U, 10U));
+    ABoxEc800At_Feed(&at, (const uint8_t *)"12345", 5U);
+    assert(!at.raw_remaining && !at.raw_owner);
+}
+
+static int fail_write;
+static int injected_write(void *u, const uint8_t *d, uint16_t n, uint32_t t)
+{ return fail_write ? 0 : write_data(u,d,n,t); }
+static void tx_failed(ABoxEc800Result result, void *user)
+{
+    assert(result==ABOX_EC800_RESULT_SEND_FAIL);
+    ++*(unsigned *)user;
+}
+static void failed_payload(ABoxEc800Event e, const uint8_t *d, uint16_t n, void *u)
+{
+    (void)d;
+    if (e==ABOX_EC800_EVENT_LINE && n==1) {
+        fail_write=1;
+        assert(!ABoxEc800At_SendPayload(u,20,(const uint8_t *)"payload",7));
+    }
+}
+static void test_failed_write_terminates_session(void)
+{
+    for (unsigned payload=0;payload<2;++payload) {
+        ABoxEc800At at;
+        ABoxEc800AtPort p={.tick_ms=tick_ms,.write=injected_write};
+        unsigned completions[2]={0};
+        fail_write=0;
+        assert(ABoxEc800At_Init(&at,&p));
+        assert(ABoxEc800At_Register(&at,20,failed_payload,&at));
+        assert(ABoxEc800At_Submit(&at,payload ? "AT+QMTPUBEX=0,0,0,0,\"a\",7" : "AT",
+            20,ABOX_EC800_PRIORITY_NORMAL,1000,tx_failed,&completions[0]));
+        if (payload) ABoxEc800At_Task(&at);
+        assert(ABoxEc800At_Submit(&at,"AT",21,ABOX_EC800_PRIORITY_NORMAL,1000,tx_failed,&completions[1]));
+        if (payload) ABoxEc800At_Feed(&at,(const uint8_t *)"> ",2);
+        else { fail_write=1; ABoxEc800At_Task(&at); }
+        assert(at.quarantined && !ABoxEc800At_IsBusy(&at));
+        assert(completions[0]==1 && completions[1]==1);
+        ABoxEc800At_Feed(&at,(const uint8_t *)"OK\r\n",4);
+        ABoxEc800At_Task(&at); ABoxEc800At_Quarantine(&at);
+        assert(completions[0]==1 && completions[1]==1);
+        assert(!ABoxEc800At_Submit(&at,"AT",20,ABOX_EC800_PRIORITY_NORMAL,1000,done,NULL));
+        ABoxEc800At_OnModemReset(&at); fail_write=0;
+        assert(ABoxEc800At_Submit(&at,"AT",20,ABOX_EC800_PRIORITY_NORMAL,1000,done,NULL));
+        g_done_count=0; ABoxEc800At_Task(&at);
+        ABoxEc800At_Feed(&at,(const uint8_t *)"OK\r\n",4);
+        assert(g_done_count==1 && g_done_result==ABOX_EC800_RESULT_OK);
+    }
+}
+
 int main(void)
 {
+    test_bulk_termination();
+    test_failed_write_terminates_session();
+    test_raw_reset_does_not_underflow();
     test_credentials_never_reach_line_observers();
     test_async_direct_command();
     test_http_post_waits_for_payload_and_result_urc();

@@ -61,5 +61,24 @@ int main(void)
     ABoxEnrollmentService_Poll(&service);
     assert(ABoxEnrollmentService_State(&service) == ABOX_ENROLLMENT_COMPLETE);
     ABoxEnrollmentService_AfterModemReset(&service);
+    service.enrollment.state = ABOX_ENROLLMENT_HTTP;
+    service.enrollment.have_request = 1U;
+    strcpy(request_id, "bound-request");
+    strcpy(poll_token, "bound-token");
+    ABoxEnrollmentService_AfterModemReset(&service);
+    assert(service.enrollment.state == ABOX_ENROLLMENT_WAITING);
+    service.enrollment.state = ABOX_ENROLLMENT_TRIAL;
+    service.enrollment.waiting_trial = 1U;
+    result = 0; /* product reports RESTORE_FAILED as a terminal failed trial */
+    ABoxEnrollmentService_Poll(&service);
+    assert(service.enrollment.state == ABOX_ENROLLMENT_WAITING && !service.enrollment.waiting_trial);
+    assert(service.enrollment.have_request && !strcmp(request_id, "bound-request"));
+    assert(!strcmp(poll_token, "bound-token"));
+    ABoxEnrollmentService_AfterModemReset(&service);
+    assert(service.enrollment.state == ABOX_ENROLLMENT_WAITING);
+    service.enrollment.state = ABOX_ENROLLMENT_CANCELLING;
+    ABoxEnrollmentService_AfterModemReset(&service);
+    assert(!service.enrollment.have_request);
+    assert(service.enrollment.state == ABOX_ENROLLMENT_WAITING);
     return 0;
 }

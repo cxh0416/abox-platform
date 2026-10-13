@@ -59,7 +59,8 @@ int ABoxMqttEc800Bridge_Init(ABoxMqttEc800Bridge *bridge, ABoxEc800At *at,
     ABoxMqttEc800Callbacks callbacks;
     if (!bridge || !at || !config || !buffers || !hooks || !hooks->message ||
         !buffers->topic || !buffers->payload || !buffers->header ||
-        !buffers->publish_payload) return 0;
+        !buffers->publish_payload || iccid_owner == ABOX_EC800_OWNER_NONE ||
+        iccid_owner == ABOX_EC800_OWNER_MQTT) return 0;
     memset(bridge, 0, sizeof(*bridge));
     bridge->at = at;
     bridge->hooks = hooks;
@@ -72,9 +73,13 @@ int ABoxMqttEc800Bridge_Init(ABoxMqttEc800Bridge *bridge, ABoxEc800At *at,
     callbacks.state_changed = on_state;
     callbacks.modem_reset = on_modem_reset;
     if (!ABoxMqttEc800_Init(&bridge->transport, at, config, buffers,
-                             &callbacks, now_ms) ||
-        !ABoxEc800Iccid_Init(&bridge->iccid, at, iccid_owner))
+                             &callbacks, now_ms)) return 0;
+    if (!ABoxEc800Iccid_Init(&bridge->iccid, at, iccid_owner)) {
+        (void)ABoxEc800At_Register(at, ABOX_EC800_OWNER_MQTT, NULL, NULL);
+        (void)ABoxEc800At_SetMqttReceiver(at, NULL);
+        bridge->transport.initialized = 0U;
         return 0;
+    }
     bridge->initialized = 1U;
     return 1;
 }

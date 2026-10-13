@@ -102,6 +102,14 @@ static void finalize_failure(ABoxHttpsUfsDownloader *d, uint32_t error)
     log_metrics(d, "failed");
 }
 
+void ABoxHttpsUfs_OnModemReset(ABoxHttpsUfsDownloader *d)
+{
+    if (!d) return;
+    if (d->port.cancel) d->port.cancel(d->port.context);
+    d->handle_valid = d->payload_sent = 0U;
+    if (d->busy) finalize_failure(d, ABOX_HTTPS_UFS_ERROR_UFS);
+}
+
 static void finish_failure(ABoxHttpsUfsDownloader *d, uint32_t error)
 {
     char command[96];

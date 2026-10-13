@@ -361,6 +361,19 @@ static void test_ufs_error_log_identifies_command(void)
 
 int main(void)
 {
+    for (unsigned backend=0; backend<2; ++backend) {
+        ABoxHttpsUfsDownloader d; Mock m; uint32_t error;
+        setup(&d, &m, (uint8_t)backend);
+        d.handle_valid=1U;
+        ABoxHttpsUfsDoneFn stale=m.done; void *user=m.done_user;
+        ABoxHttpsUfs_OnModemReset(&d);
+        assert(!ABoxHttpsUfs_IsBusy(&d) && !d.handle_valid && !m.done);
+        assert(ABoxHttpsUfs_TakeFailure(&d, &error) && error==ABOX_HTTPS_UFS_ERROR_UFS);
+        ABoxHttpsUfs_OnModemReset(&d);
+        if (stale) stale(ABOX_HTTPS_UFS_AT_OK, user);
+        assert(!ABoxHttpsUfs_TakeFailure(&d, &error));
+        assert(!ABoxHttpsUfs_TakeSuccess(&d));
+    }
     test_direct_success();
     test_direct_failure_falls_back();
     test_truncated_direct_get_recovers_before_range();

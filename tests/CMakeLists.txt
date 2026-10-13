@@ -95,6 +95,9 @@ add_test(NAME abox_enrollment_service_test COMMAND abox_enrollment_service_test)
 add_executable(abox_boot_v2_ec800_port_test abox_boot_v2_ec800_port_test.c)
 target_link_libraries(abox_boot_v2_ec800_port_test PRIVATE abox::boot_v2_app)
 add_test(NAME abox_boot_v2_ec800_port_test COMMAND abox_boot_v2_ec800_port_test)
+add_executable(abox_boot_v2_app_init_test boot_v2_app_init_test.c)
+target_link_libraries(abox_boot_v2_app_init_test PRIVATE abox::boot_v2_app)
+add_test(NAME abox_boot_v2_app_init_test COMMAND abox_boot_v2_app_init_test)
 add_executable(abox_ec800_recovery_test abox_ec800_recovery_test.c)
 target_link_libraries(abox_ec800_recovery_test PRIVATE abox::ec_power)
 add_test(NAME abox_ec800_recovery_test COMMAND abox_ec800_recovery_test)
@@ -124,6 +127,23 @@ target_include_directories(abox_app_service_test PRIVATE
     ../components/cloud/include ../components/ec800/include ../components/boot_v2/include
     ../components/ota/include ../components/core/include ../components/ec_power/include)
 add_test(NAME abox_app_service_test COMMAND abox_app_service_test)
+add_executable(abox_app_service_failure_test app_service_failure_test.c
+    ../components/cloud/src/abox_app_service.c ../components/ec_power/src/abox_ec800_recovery.c)
+target_include_directories(abox_app_service_failure_test PRIVATE
+    ../components/cloud/include ../components/boot_v2/include
+    ../components/ota/include ../components/ec_power/include)
+target_link_libraries(abox_app_service_failure_test PRIVATE abox::ec800 abox::mqtt_ec800_rx)
+add_test(NAME abox_app_service_failure_test COMMAND abox_app_service_failure_test)
+add_executable(abox_app_service_uart_test app_service_uart_test.c
+    ../components/cloud/src/abox_app_service.c ../components/ec_power/src/abox_ec800_recovery.c)
+target_include_directories(abox_app_service_uart_test PRIVATE
+    ../components/cloud/include ../components/boot_v2/include ../components/ota/include
+    ../components/ec_power/include)
+target_link_libraries(abox_app_service_uart_test PRIVATE abox::ec800)
+add_test(NAME abox_app_service_uart_test COMMAND abox_app_service_uart_test)
+add_executable(abox_registration_failure_test registration_failure_test.c)
+target_link_libraries(abox_registration_failure_test PRIVATE abox::mqtt_ec800 abox::enrollment_ec800_http)
+add_test(NAME abox_registration_failure_test COMMAND abox_registration_failure_test)
 add_executable(abox_cloud_dispatch_queue_test abox_cloud_dispatch_queue_test.c)
 target_link_libraries(abox_cloud_dispatch_queue_test PRIVATE abox::cloud_service)
 add_test(NAME abox_cloud_dispatch_queue_test COMMAND abox_cloud_dispatch_queue_test)
@@ -143,3 +163,28 @@ add_test(NAME abox_mqtt_digest_test COMMAND abox_mqtt_digest_test)
 add_test(NAME abox_mqtt_digest_vectors
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_mqtt_digest_vectors.py
         $<TARGET_FILE:abox_mqtt_digest_test>)
+
+# Optional adapters from a product checkout; no target/firmware execution.
+if(ABOX_STAGE2_PRODUCT_ROOT)
+    add_test(NAME product_io_init_test COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_product_io_init.py
+        --product-root ${ABOX_STAGE2_PRODUCT_ROOT})
+    file(GLOB product_includes "${ABOX_STAGE2_PRODUCT_ROOT}/app/Core/User/*/include")
+    add_executable(product_runtime_recovery_test product_runtime_recovery_test.c)
+    target_compile_definitions(product_runtime_recovery_test PRIVATE
+        PRODUCT_RUNTIME_SOURCE="${ABOX_STAGE2_PRODUCT_ROOT}/app/Core/User/mqtt/src/mqtt_runtime.c")
+    if(EXISTS "${ABOX_STAGE2_PRODUCT_ROOT}/app/Core/User/system/include/vcu_config.h")
+        target_compile_definitions(product_runtime_recovery_test PRIVATE PRODUCT_SWEEPER=1)
+    endif()
+    target_include_directories(product_runtime_recovery_test PRIVATE recovery_stubs ${product_includes})
+    target_link_libraries(product_runtime_recovery_test PRIVATE abox::mqtt_runtime abox::mqtt_trial abox::core)
+    add_test(NAME product_runtime_recovery_test COMMAND product_runtime_recovery_test)
+    if(EXISTS "${ABOX_STAGE2_PRODUCT_ROOT}/app/tests/open_idem_recovery_test.c")
+        add_executable(product_open_idem_recovery_test
+            "${ABOX_STAGE2_PRODUCT_ROOT}/app/tests/open_idem_recovery_test.c")
+        target_include_directories(product_open_idem_recovery_test PRIVATE recovery_stubs ${product_includes})
+        target_link_libraries(product_open_idem_recovery_test PRIVATE
+            abox::ec800 abox::boot_v2_common abox::mqtt_v4)
+        add_test(NAME product_open_idem_recovery_test COMMAND product_open_idem_recovery_test)
+    endif()
+endif()

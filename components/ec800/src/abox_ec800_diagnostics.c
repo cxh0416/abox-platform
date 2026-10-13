@@ -87,7 +87,11 @@ int ABoxEc800Diagnostics_Init(ABoxEc800Diagnostics *d, ABoxEc800At *at, ABoxEc80
     if (!d || !at || !at->port.tick_ms || !owner) return 0;
     memset(d, 0, sizeof(*d)); d->at = at; d->owner = owner;
     d->step = 2U;
-    return ABoxEc800At_Register(at, owner, line, d);
+    if (!ABoxEc800At_Register(at, owner, line, d)) {
+        d->at = NULL;
+        return 0;
+    }
+    return 1;
 }
 void ABoxEc800Diagnostics_Poll(ABoxEc800Diagnostics *d, uint32_t now,
     uint8_t may_query, uint8_t attached, uint8_t pdp_active, uint8_t mqtt_ready)

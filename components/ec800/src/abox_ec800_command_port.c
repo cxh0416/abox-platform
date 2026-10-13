@@ -6,7 +6,8 @@ static void done(ABoxEc800Result result, void *user)
     if (result == ABOX_EC800_RESULT_TIMEOUT || result == ABOX_EC800_RESULT_SEND_FAIL) {
         ABoxEc800At_Quarantine(a->at);
         a->result = ABOX_ASYNC_QUARANTINED;
-    } else a->result = result == ABOX_EC800_RESULT_OK ? ABOX_ASYNC_OK : ABOX_ASYNC_ERROR;
+    } else if (a->at->quarantined) a->result = ABOX_ASYNC_QUARANTINED;
+    else a->result = result == ABOX_EC800_RESULT_OK ? ABOX_ASYNC_OK : ABOX_ASYNC_ERROR;
 }
 static int submit(void *user, const char *command, uint32_t timeout, uint64_t *operation)
 {

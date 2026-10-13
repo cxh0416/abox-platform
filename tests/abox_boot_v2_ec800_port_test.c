@@ -60,7 +60,7 @@ int main(void)
     assert(port.context == &adapter && port.tick_ms == tick &&
            port.mqtt_stop == product_stop);
     assert(port.mqtt_stop(port.context, 123U));
-    port.register_events(port.context, event, &lines);
+    assert(port.register_events(port.context, event, &lines));
     assert(port.submit(port.context, "AT+QHTTPGET=80", 1000U,
                        done, &completed));
     assert(port.has_pending(port.context));

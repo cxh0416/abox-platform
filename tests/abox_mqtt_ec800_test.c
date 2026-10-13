@@ -18,6 +18,7 @@ typedef struct {
     uint8_t sent_payload[64];
     size_t sent_length;
     unsigned messages, submitted, confirmed, failed, resets;
+    int fail_write;
     uint64_t last_operation;
 } Fixture;
 
@@ -30,6 +31,7 @@ static int write_bytes(void *context, const uint8_t *data, uint16_t length,
 {
     Fixture *f = (Fixture *)context;
     (void)timeout;
+    if (f->fail_write) return 0;
     if (length >= 3U && data[0] == 'A' && data[1] == 'T') {
         assert(length < sizeof(f->command));
         memcpy(f->command, data, length);
@@ -102,6 +104,54 @@ static void connect_session(Fixture *f)
     assert(ABoxMqttEc800_IsReady(&f->mqtt));
 }
 
+static void test_queue_retry(const ABoxMqttEc800Config *config,
+                             const ABoxMqttEc800Buffers *buffers)
+{
+    const ABoxMqttEc800State phases[]={ABOX_MQTT_EC800_CONFIGURING,
+        ABOX_MQTT_EC800_OPENING,ABOX_MQTT_EC800_CONNECTING,ABOX_MQTT_EC800_SUBSCRIBING};
+    for (unsigned phase=0;phase<4;++phase) for (unsigned expire=0;expire<2;++expire) {
+        Fixture f={0};
+        ABoxEc800AtPort port={.context=&f,.tick_ms=tick,.write=write_bytes};
+        ABoxMqttEc800Callbacks callbacks={.user=&f,.message=incoming};
+        uint32_t timeout=phase==0 ? config->command_timeout_ms : config->open_timeout_ms;
+        f.now=0xFFFFFF00U;
+        assert(ABoxEc800At_Init(&f.at,&port));
+        assert(ABoxMqttEc800_Init(&f.mqtt,&f.at,config,buffers,&callbacks,f.now));
+        ABoxMqttEc800_SetSecurityReady(&f.mqtt,1);
+        assert(ABoxMqttEc800_Start(&f.mqtt,f.now));
+        f.mqtt.state=phases[phase];
+        for (unsigned i=0;i<ABOX_EC800_AT_QUEUE_SIZE;++i)
+            assert(ABoxEc800At_Submit(&f.at,"AT",(ABoxEc800Owner)(20+i),ABOX_EC800_PRIORITY_NORMAL,20000,NULL,NULL));
+        for (unsigned i=0;i<3;++i) ABoxMqttEc800_Poll(&f.mqtt,f.now);
+        assert(!f.mqtt.command_pending && !f.mqtt.next_sub_msg_id && !f.mqtt.pending_sub_msg_id);
+        f.now+=expire ? timeout : timeout-1;
+        ABoxEc800At_CancelQueued(&f.at,25);
+        ABoxMqttEc800_Poll(&f.mqtt,f.now);
+        if (expire) {
+            assert(!ABoxEc800At_HasPending(&f.at,ABOX_EC800_OWNER_MQTT));
+            assert(f.mqtt.state==(phase ? ABOX_MQTT_EC800_CLOSING : ABOX_MQTT_EC800_RETRY_WAIT));
+        } else {
+            assert(f.mqtt.command_pending && f.mqtt.state==phases[phase]);
+            /* Delay wire start longer than the phase timeout. Queue admission
+             * must not immediately cancel the just-accepted command. */
+            f.now+=timeout+1;
+            ABoxMqttEc800_Poll(&f.mqtt,f.now);
+            assert(f.mqtt.state==phases[phase] && !f.at.quarantined);
+            ABoxEc800At_Task(&f.at);
+            assert(ABoxEc800At_IsActive(&f.at,ABOX_EC800_OWNER_MQTT));
+            ABoxMqttEc800_Poll(&f.mqtt,f.now);
+            assert(f.mqtt.state==phases[phase]);
+            if (phase) {
+                f.now+=timeout-1;
+                feed(&f,phase==1 ? "OK\r\n+QMTOPEN: 0,0\r\n" :
+                    phase==2 ? "OK\r\n+QMTCONN: 0,0,0\r\n" : "OK\r\n+QMTSUB: 0,1,0,1\r\n");
+                ABoxMqttEc800_Poll(&f.mqtt,f.now);
+                assert(f.mqtt.state!=ABOX_MQTT_EC800_CLOSING && !f.at.quarantined);
+            }
+        }
+    }
+}
+
 int main(void)
 {
     Fixture f;
@@ -133,6 +183,7 @@ int main(void)
     buffers.topic = topic; buffers.topic_capacity = sizeof(topic);
     buffers.payload = payload; buffers.payload_capacity = sizeof(payload);
     buffers.publish_payload = outgoing; buffers.publish_capacity = sizeof(outgoing);
+    test_queue_retry(&config,&buffers);
     callbacks.user = &f; callbacks.message = incoming;
     callbacks.publish_event = published;
     callbacks.modem_reset = modem_reset;
@@ -352,6 +403,46 @@ int main(void)
     assert(ABoxMqttEc800_Stop(&f.mqtt,f.now)==0);
     f.now+=1600; cycle(&f);
     assert(ABoxMqttEc800_Stop(&f.mqtt,f.now)==1);
+    for (unsigned mode=0; mode<4; ++mode) for (unsigned stage=0; stage<3; ++stage) {
+        memset(&f,0,sizeof(f));
+        assert(ABoxEc800At_Init(&f.at,&port));
+        assert(ABoxMqttEc800_Init(&f.mqtt,&f.at,&config,&buffers,&callbacks,0));
+        f.mqtt.state=ABOX_MQTT_EC800_READY;
+        f.mqtt.enabled=f.mqtt.security_ready=1;
+        assert(ABoxMqttEc800_Publish(&f.mqtt,"a/b",(const uint8_t *)"test",4,1,0,&operation));
+        if (stage) ABoxEc800At_Task(&f.at);
+        if (stage==2) feed(&f,"> \r\nSEND OK\r\n"); /* AT done, publish ACK outstanding */
+        for (unsigned duplicate=0; duplicate<2; ++duplicate) {
+            if (!mode) feed(&f,"RDY\r\n");
+            else if (mode==1) ABoxEc800At_AbortAll(&f.at,ABOX_EC800_RESULT_ERROR);
+            else if (mode==2) ABoxEc800At_Quarantine(&f.at);
+            else ABoxMqttEc800_SetSecurityReady(&f.mqtt,0);
+            if (mode==3) assert(!f.mqtt.publish_active); /* safety gate does not depend on Poll */
+            ABoxMqttEc800_Poll(&f.mqtt,f.now);
+        }
+        assert(!f.mqtt.publish_active && f.failed==1 && !f.confirmed);
+        ABoxEc800At_OnModemReset(&f.at);
+        f.mqtt.state=ABOX_MQTT_EC800_READY;
+        ABoxMqttEc800_SetSecurityReady(&f.mqtt,1);
+        assert(ABoxMqttEc800_Publish(&f.mqtt,"a/b",(const uint8_t *)"test",4,1,0,&operation));
+        ABoxEc800At_Task(&f.at); feed(&f,"> \r\n");
+        feed(&f,"+QMTPUBEX: 1,1,0\r\n"); /* old publish must not complete new session */
+        assert(!f.confirmed && f.mqtt.publish_active);
+        feed(&f,"+QMTPUBEX: 1,2,0\r\n");
+        assert(f.confirmed==1 && !f.mqtt.publish_active && f.failed==1);
+    }
+    /* Payload write invokes done synchronously inside the prompt observer. */
+    memset(&f,0,sizeof(f));
+    assert(ABoxEc800At_Init(&f.at,&port));
+    assert(ABoxMqttEc800_Init(&f.mqtt,&f.at,&config,&buffers,&callbacks,0));
+    f.mqtt.state=ABOX_MQTT_EC800_READY;
+    f.mqtt.enabled=f.mqtt.security_ready=1;
+    assert(ABoxMqttEc800_Publish(&f.mqtt,"a/b",(const uint8_t *)"test",4,1,0,&operation));
+    ABoxEc800At_Task(&f.at); f.fail_write=1; feed(&f,"> ");
+    assert(f.failed==1 && !f.submitted && !f.confirmed && !f.mqtt.publish_active && f.at.quarantined);
+    feed(&f,"OK\r\n+QMTPUBEX: 1,1,0\r\n");
+    ABoxMqttEc800_Poll(&f.mqtt,f.now);
+    assert(f.failed==1 && !f.confirmed && !ABoxEc800At_IsBusy(&f.at));
     puts("abox_mqtt_ec800_test passed");
     return 0;
 }

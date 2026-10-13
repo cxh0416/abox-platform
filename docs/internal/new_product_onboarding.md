@@ -8,6 +8,8 @@ App CMake 使用 `abox_platform_attach_standard_app(target PRODUCT_CONFIG_DIR di
 
 运行时显式初始化 AT、RX ring、MQTT bridge/runtime、Enrollment、维护、Cloud 和 Boot V2 App，然后调用 `ABoxAppService_Init`。裸机主循环调用 `ABoxAppService_Poll`；FreeRTOS 由唯一通信 owner 调用。中断只投递 RX 或事件，其他任务不能直接轮询 AT。
 
+OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，不要求 MQTT 已联网。产品必须检查基础通信初始化和 OTA 绑定结果。OTA 初始化失败可局部禁用；基础通信初始化失败则停止通信服务，MCU 本地安全任务继续运行。`ABoxBootV2App_IsInitialized` 只表示本次启动绑定成功，不表示 CA/UFS 或网络就绪；初始化前和失败后的 Task、Start、查询及迟到回调均安全返回。每次 Init 尝试都会失效先前的就绪状态，产品在绑定失败前可用 `Init(NULL, NULL)` 显式失效；Init 只用于启动或已排空的空闲会话，不得用于取消活动下载。
+
 `ABoxAppServicePort` 按产品声明的先后关系轮询 runtime/transport，托管 ready 边沿和模组恢复。`before_cloud` 可暂停连接推进；维护、Enrollment 或 OTA 占用时禁止模组重置。重置前先投递 NETWORK_CHANGED 使旧连接状态和 operation 失效，再重启电源轨。产品回调负责业务安全撤销、配置准入和网络准备。
 
 ## Cloud 与维护
