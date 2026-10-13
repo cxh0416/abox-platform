@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -17,6 +18,19 @@ def run(exe, payload, mode="value", valid=True):
 
 
 def main(exe):
+    # All 60001 existing Patrol milli-degree values vs ECMAScript/JCS number
+    # serialization, without admitting floats in the generic wire parser.
+    actual = subprocess.run([exe, "milli-range"], check=True, capture_output=True).stdout.replace(b"\r\n", b"\n")
+    node = shutil.which("node")
+    if node:
+        expected = subprocess.run([node, "-e", "let a=[];for(let i=-30000;i<=30000;i++)a.push(JSON.stringify(i/1000));process.stdout.write(a.join('\\n')+'\\n')"],
+                                  check=True, capture_output=True).stdout
+        assert actual == expected
+        print("PASS 60001 milli-degree values vs ECMAScript JCS numbers")
+    else:
+        from decimal import Decimal
+        expected = "".join(format((Decimal(i) / 1000).normalize(), "f") + "\n" for i in range(-30000, 30001)).encode()
+        assert actual == expected
     vectors = json.loads((ROOT / "docs/protocols/v4/test-vectors.json").read_text(encoding="utf-8"))
     for vector in vectors["valid"]:
         value = normalize_vector(vector)

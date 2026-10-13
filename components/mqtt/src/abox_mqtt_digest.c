@@ -67,6 +67,28 @@ static int quoted(const char *s, ABoxCanonicalWriter write, void *ctx)
     }
     return (s == start || write(ctx, start, (size_t)(s - start))) && write(ctx, "\"", 1);
 }
+int ABoxMqttDigest_WriteString(const char *value, ABoxCanonicalWriter write, void *context)
+{ return write && quoted(value, write, context); }
+int ABoxMqttDigest_WriteInteger(int64_t value, ABoxCanonicalWriter write, void *context)
+{
+    uint64_t magnitude = value < 0 ? (uint64_t)(-(value + 1)) + 1U : (uint64_t)value;
+    char text[18];
+    return write && magnitude <= 9007199254740991ULL &&
+        ABoxMqttV4_FormatInteger(text, sizeof(text), magnitude) &&
+        (value >= 0 || write(context, "-", 1)) && write(context, text, strlen(text));
+}
+int ABoxMqttDigest_WriteMilli(int32_t value, ABoxCanonicalWriter write, void *context)
+{
+    uint32_t magnitude = value < 0 ? (uint32_t)(-(int64_t)value) : (uint32_t)value;
+    uint32_t fraction = magnitude % 1000U;
+    char decimal[4] = {'.', (char)('0' + fraction / 100U),
+        (char)('0' + fraction / 10U % 10U), (char)('0' + fraction % 10U)};
+    size_t n = sizeof(decimal);
+    while (n > 1 && decimal[n - 1] == '0') --n;
+    return write && (value >= 0 || write(context, "-", 1)) &&
+        ABoxMqttDigest_WriteInteger(magnitude / 1000U, write, context) &&
+        (!fraction || write(context, decimal, n));
+}
 static int canonical(const cJSON *v, ABoxCanonicalWriter write, void *ctx, unsigned depth)
 {
     if (!v || depth > MAX_DEPTH) return 0;
@@ -78,9 +100,7 @@ static int canonical(const cJSON *v, ABoxCanonicalWriter write, void *ctx, unsig
         if (!isfinite(d) || fabs(d) > SAFE_INTEGER || (d == 0 && signbit(d))) return 0;
         int64_t number = (int64_t)d;
         if ((double)number != d) return 0;
-        char text[18];
-        int n = ABoxMqttV4_FormatInteger(text, sizeof(text), (uint64_t)(number < 0 ? -number : number));
-        return n && (number >= 0 || write(ctx, "-", 1)) && write(ctx, text, strlen(text));
+        return ABoxMqttDigest_WriteInteger(number, write, ctx);
     }
     if (cJSON_IsArray(v)) {
         if (!write(ctx, "[", 1)) return 0;
@@ -161,18 +181,42 @@ int ABoxMqttDigest_Value(const cJSON *value, uint8_t digest[32])
     if (!ABoxMqttDigest_Canonical(value, hash, &ctx)) { memset(&ctx, 0, sizeof(ctx)); memset(digest, 0, 32); return 0; }
     ABoxSha256_Final(&ctx, digest); return 1;
 }
-int ABoxMqttDigest_RequestFields(const char *command, const cJSON *params,
-                               const cJSON *expires, uint8_t digest[32])
+int ABoxMqttDigest_WriteRequest(const char *command, int has_expires, uint64_t expires,
+    ABoxCanonicalEncoder params, void *value, ABoxCanonicalWriter write, void *context)
+{
+    return write && command && params && (!has_expires || expires <= 9007199254740991ULL) &&
+        write(context, "{\"command\":", 11) && quoted(command, write, context) &&
+        (!has_expires || (write(context, ",\"expiresAt\":", 13) &&
+                          ABoxMqttDigest_WriteInteger((int64_t)expires, write, context))) &&
+        write(context, ",\"params\":", 10) && params(value, write, context) && write(context, "}", 1);
+}
+int ABoxMqttDigest_RequestStream(const char *command, int has_expires, uint64_t expires,
+    ABoxCanonicalEncoder params, void *value, uint8_t digest[32])
 {
     ABoxSha256 ctx;
     if (!digest) return 0;
     ABoxSha256_Init(&ctx);
-    int ok = command && params && (!expires || cJSON_IsNumber(expires)) &&
-        hash(&ctx, "{\"command\":", 11) && quoted(command, hash, &ctx) &&
-        (!expires || (hash(&ctx, ",\"expiresAt\":", 13) && canonical(expires, hash, &ctx, 1))) &&
-        hash(&ctx, ",\"params\":", 10) && canonical(params, hash, &ctx, 1) && hash(&ctx, "}", 1);
+    int ok = ABoxMqttDigest_WriteRequest(command, has_expires, expires, params, value, hash, &ctx);
     if (!ok) { memset(&ctx, 0, sizeof(ctx)); memset(digest, 0, 32); return 0; }
     ABoxSha256_Final(&ctx, digest); return 1;
+}
+static int tree(void *value, ABoxCanonicalWriter write, void *context)
+{ return canonical(value, write, context, 1); }
+static int null_params(void *value, ABoxCanonicalWriter write, void *context)
+{ (void)value; return write(context, "null", 4); }
+int ABoxMqttDigest_NullRequest(const char *command, int has_expires, uint64_t expires, uint8_t digest[32])
+{ return ABoxMqttDigest_RequestStream(command, has_expires, expires, null_params, NULL, digest); }
+int ABoxMqttDigest_RequestFields(const char *command, const cJSON *params,
+                               const cJSON *expires, uint8_t digest[32])
+{
+    if (!params || (expires && (!cJSON_IsNumber(expires) || !isfinite(expires->valuedouble) || expires->valuedouble < 0 ||
+        expires->valuedouble > SAFE_INTEGER || (double)(uint64_t)expires->valuedouble != expires->valuedouble ||
+        (expires->valuedouble == 0 && signbit(expires->valuedouble))))) {
+        if (digest) memset(digest, 0, 32);
+        return 0;
+    }
+    return ABoxMqttDigest_RequestStream(command, expires != NULL,
+        expires ? (uint64_t)expires->valuedouble : 0, tree, (void *)params, digest);
 }
 int ABoxMqttDigest_Request(const cJSON *data, const cJSON *normalized_params, uint8_t digest[32])
 {
