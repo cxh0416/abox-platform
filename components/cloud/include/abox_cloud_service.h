@@ -16,12 +16,14 @@ typedef enum {
     ABOX_CLOUD_JOB_HEARTBEAT,
     ABOX_CLOUD_JOB_STATE,
     ABOX_CLOUD_JOB_RESPONSE,
+    ABOX_CLOUD_JOB_PRODUCT_STATE, /* Opt-in product state deadline, before ordinary responses. */
     ABOX_CLOUD_JOB_EXTERNAL /* Product log/alert work below all Cloud jobs. */
 } ABoxCloudJobKind;
 
 typedef struct {
     ABoxCloudJobKind kind;
     uint32_t generation;
+    uint8_t state_index;
     const char *reason;       /* For state: startup, reconnect, sync_state, event, periodic. */
     const char *request_id;   /* For response and sync_state; valid until next mutation. */
 } ABoxCloudJob;
@@ -91,6 +93,7 @@ typedef struct {
     uint64_t operation;
     ABoxCloudJobKind in_flight;
     uint8_t ready;
+    uint8_t state_count, state_index, product_state_pending;
     uint8_t ever_ready;
     uint8_t bootstrap_stage;
     uint8_t response_pending;
@@ -108,6 +111,8 @@ int ABoxCloudService_Init(ABoxCloudService *service,
                           const ABoxCloudServiceOptions *options, uint32_t now);
 void ABoxCloudService_SetReady(ABoxCloudService *service, int ready, uint32_t now);
 void ABoxCloudService_NetworkChanged(ABoxCloudService *service);
+void ABoxCloudService_SetStateCount(ABoxCloudService *service, uint8_t count);
+void ABoxCloudService_SetProductStatePending(ABoxCloudService *service, int pending);
 int ABoxCloudService_Bootstrapping(const ABoxCloudService *service);
 /* The caller retains its response topic/payload until RESPONSE confirmation. */
 int ABoxCloudService_QueueResponse(ABoxCloudService *service,

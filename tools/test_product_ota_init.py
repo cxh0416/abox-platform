@@ -19,7 +19,8 @@ include_dirs += [platform / "components" / name / "include"
 command = [shutil.which("gcc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
            "-Wno-unused-parameter", "-DPRODUCT_OTA_SOURCE=\"" + source.as_posix() + "\"",
            *["-I" + str(p) for p in include_dirs],
-           str(platform / "tests/product_ota_init_test.c"), "-o", str(exe)]
+           str(platform / "tests/product_ota_init_test.c"),
+           str(platform / "components/ec800/src/abox_ec800_at.c"), "-o", str(exe)]
 subprocess.run(command, check=True)
 subprocess.run([str(exe)], check=True)
 print("Product OTA startup failure injection: PASS (" + product.name + ")")
