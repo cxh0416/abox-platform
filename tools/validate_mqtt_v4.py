@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+from decimal import Decimal
 from pathlib import Path
 import re
 import sys
@@ -55,8 +57,53 @@ def utf16_sort_key(value: str) -> bytes:
     return value.encode("utf-16-be")
 
 
+def parse_number(token: str) -> float:
+    value = float(token)
+    if (not math.isfinite(value) or (value == 0 and
+            (token.startswith("-") or Decimal(token) != 0))):
+        raise ContractError("nonfinite, negative zero or underflowed Number")
+    return value
+
+
+def load_number_json(text: str):
+    """Numeric conformance input only; Profile field validation is separate.
+
+    Use load_contract_json for Integer schemas. This opts ALL numeric fields
+    into binary64 Number, including integer-shaped input outside safe range.
+    """
+    return json.loads(text, object_pairs_hook=reject_duplicate_keys,
+                      parse_int=parse_number, parse_float=parse_number,
+                      parse_constant=reject_non_integer)
+
+
+def canonical_number(value: float) -> str:
+    if not math.isfinite(value) or (value == 0 and math.copysign(1, value) < 0):
+        raise ContractError("invalid binary64 Number")
+    if value == 0:
+        return "0"
+    # Python's shortest round-trip digits, rendered at ECMAScript thresholds.
+    # Tests compare both this reference and the C Ryu codec with ECMAScript.
+    negative = value < 0
+    mantissa, _, exponent = repr(abs(value)).lower().partition("e")
+    integer, _, fraction = mantissa.partition(".")
+    digits = (integer + fraction).lstrip("0").rstrip("0")
+    point = len(integer) + int(exponent or "0")
+    point -= len(integer + fraction) - len((integer + fraction).lstrip("0"))
+    if -6 <= point - 1 < 21:
+        if point <= 0:
+            text = "0." + "0" * -point + digits
+        elif point >= len(digits):
+            text = digits + "0" * (point - len(digits))
+        else:
+            text = digits[:point] + "." + digits[point:]
+    else:
+        text = digits[0] + (("." + digits[1:]) if len(digits) > 1 else "")
+        text += "e" + ("+" if point - 1 >= 0 else "-") + str(abs(point - 1))
+    return ("-" if negative else "") + text
+
+
 def canonicalize(value) -> str:
-    """RFC 8785 compatible serializer for the V4 integer-only JSON subset."""
+    """RFC 8785 serializer after Integer/Profile Number field validation."""
     if value is None:
         return "null"
     if value is True:
@@ -67,6 +114,8 @@ def canonicalize(value) -> str:
         if abs(value) > SAFE_INTEGER:
             raise ContractError("integer exceeds the safe range")
         return str(value)
+    if isinstance(value, float):
+        return canonical_number(value)
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     if isinstance(value, list):
@@ -226,6 +275,17 @@ def main() -> int:
             continue
         failures.append(f"{vector['name']}: invalid JSON was accepted")
 
+    for vector in vectors.get("numberValid", []):
+        actual = canonicalize(load_number_json(vector["json"]))
+        if actual != vector["canonical"] or hashlib.sha256(actual.encode()).hexdigest() != vector["sha256"]:
+            failures.append(f"{vector['name']}: Number canonical bytes/digest mismatch")
+    for vector in vectors.get("numberInvalid", []):
+        try:
+            load_number_json(vector["json"])
+        except (ContractError, json.JSONDecodeError):
+            continue
+        failures.append(f"{vector['name']}: invalid Number was accepted")
+
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}", file=sys.stderr)
@@ -234,6 +294,8 @@ def main() -> int:
     print(
         f"validated {len(vectors['valid'])} valid and "
         f"{len(vectors['invalidJson'])} invalid MQTT V4 vectors; "
+        f"{len(vectors.get('numberValid', []))} valid and "
+        f"{len(vectors.get('numberInvalid', []))} invalid Number vectors; "
         f"registry contains {len(registry['profiles'])} profile"
     )
     return 0

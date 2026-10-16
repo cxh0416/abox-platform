@@ -96,11 +96,7 @@ static int canonical(const cJSON *v, ABoxCanonicalWriter write, void *ctx, unsig
     if (cJSON_IsBool(v)) return cJSON_IsTrue(v) ? write(ctx, "true", 4) : write(ctx, "false", 5);
     if (cJSON_IsString(v)) return quoted(v->valuestring, write, ctx);
     if (cJSON_IsNumber(v)) {
-        double d = v->valuedouble;
-        if (!isfinite(d) || fabs(d) > SAFE_INTEGER || (d == 0 && signbit(d))) return 0;
-        int64_t number = (int64_t)d;
-        if ((double)number != d) return 0;
-        return ABoxMqttDigest_WriteInteger(number, write, ctx);
+        return ABoxMqttDigest_WriteNumber(v->valuedouble, write, ctx);
     }
     if (cJSON_IsArray(v)) {
         if (!write(ctx, "[", 1)) return 0;
@@ -134,9 +130,77 @@ static int canonical(const cJSON *v, ABoxCanonicalWriter write, void *ctx, unsig
 int ABoxMqttDigest_Canonical(const cJSON *value, ABoxCanonicalWriter write, void *context)
 { return write && canonical(value, write, context, 0); }
 static int discard(void *ctx, const char *s, size_t n) { (void)ctx; (void)s; (void)n; return 1; }
-cJSON *ABoxMqttDigest_Parse(const char *json, size_t length)
+typedef struct { size_t end; int integer, nonzero; } NumberToken;
+static int digit(char ch) { return ch >= '0' && ch <= '9'; }
+static int number_token(const char *json, size_t length, size_t start, NumberToken *token)
+{
+    size_t i = start;
+    token->integer = 1; token->nonzero = 0;
+    if (json[i] == '-' && ++i == length) return 0;
+    if (!digit(json[i])) return 0;
+    if (json[i] == '0' && i + 1 < length && digit(json[i + 1])) return 0;
+    do { token->nonzero |= json[i++] != '0'; } while (i < length && digit(json[i]));
+    if (i < length && json[i] == '.') {
+        token->integer = 0;
+        if (++i == length || !digit(json[i])) return 0;
+        do { token->nonzero |= json[i++] != '0'; } while (i < length && digit(json[i]));
+    }
+    if (i < length && (json[i] == 'e' || json[i] == 'E')) {
+        token->integer = 0;
+        if (++i == length) return 0;
+        if ((json[i] == '+' || json[i] == '-') && ++i == length) return 0;
+        if (!digit(json[i])) return 0;
+        do { ++i; } while (i < length && digit(json[i]));
+    }
+    if (i < length && json[i] != ',' && json[i] != '}' && json[i] != ']' &&
+        json[i] != ' ' && json[i] != '\t' && json[i] != '\r' && json[i] != '\n') return 0;
+    token->end = i;
+    return 1;
+}
+typedef struct {
+    const char *json; size_t length, cursor;
+    const cJSON *root; ABoxMqttNumberField is_number; void *context;
+} WireNumbers;
+static int validate_numbers(const cJSON *value, WireNumbers *wire, unsigned depth)
+{
+    if (depth > MAX_DEPTH) return 0;
+    if (cJSON_IsNumber(value)) {
+        size_t i = wire->cursor;
+        /* JSON tree iteration retains input order. Match each numeric node to
+         * its original token so 1.0 cannot become a legal Integer after strtod. */
+        for (; i < wire->length; ++i) {
+            if (wire->json[i] == '"') {
+                while (++i < wire->length && wire->json[i] != '"')
+                    if (wire->json[i] == '\\') ++i;
+            } else if (wire->json[i] == '-' || digit(wire->json[i])) break;
+        }
+        NumberToken token;
+        if (i == wire->length || !number_token(wire->json, wire->length, i, &token)) return 0;
+        wire->cursor = token.end;
+        double d = value->valuedouble;
+        if (!isfinite(d) || (d == 0 && (signbit(d) || token.nonzero || wire->json[i] == '-'))) return 0;
+        if (wire->is_number && wire->is_number(wire->context, wire->root, value)) return 1;
+        if (!token.integer) return 0;
+        /* Check raw digits before conversion: 9007199254740991.1 must never
+         * round into the Integer domain, nor can an unsafe integer do so. */
+        uint64_t magnitude = 0;
+        if (wire->json[i] == '-') ++i;
+        for (; i < token.end; ++i) {
+            unsigned v = (unsigned)(wire->json[i] - '0');
+            if (magnitude > (9007199254740991ULL - v) / 10U) return 0;
+            magnitude = magnitude * 10U + v;
+        }
+        return fabs(d) <= SAFE_INTEGER && (double)(int64_t)d == d;
+    }
+    for (const cJSON *p = value->child; p; p = p->next)
+        if (!validate_numbers(p, wire, depth + 1)) return 0;
+    return 1;
+}
+cJSON *ABoxMqttDigest_ParseProfile(const char *json, size_t length,
+                                 ABoxMqttNumberField is_number, void *context)
 {
     if (!json || !length || memchr(json, 0, length)) return NULL;
+    if ((unsigned char)json[0] == 0xef) return NULL; /* No UTF-8 BOM. */
     /* cJSON handles JSON grammar; retain wire numeric lexemes before decoding. */
     unsigned depth = 0;
     for (size_t i = 0; i < length; ++i) {
@@ -155,22 +219,25 @@ cJSON *ABoxMqttDigest_Parse(const char *json, size_t length)
             if (!depth) return NULL;
             --depth;
         } else if (json[i] == '-' || (json[i] >= '0' && json[i] <= '9')) {
-            size_t start = i;
-            if (json[i] == '-' && ++i == length) return NULL;
-            if (json[i] < '0' || json[i] > '9') return NULL;
-            if (i > start && json[i] == '0') return NULL;
-            if (json[i] == '0' && i + 1 < length && json[i + 1] >= '0' && json[i + 1] <= '9') return NULL;
-            while (i + 1 < length && json[i + 1] >= '0' && json[i + 1] <= '9') ++i;
-            if (i + 1 < length && (json[i + 1] == '.' || json[i + 1] == 'e' || json[i + 1] == 'E')) return NULL;
+            NumberToken token;
+            if (!number_token(json, length, i, &token)) return NULL;
+            i = token.end - 1;
+        } else if ((unsigned char)json[i] <= 32 && json[i] != ' ' && json[i] != '\t' &&
+                   json[i] != '\r' && json[i] != '\n') {
+            return NULL;
         }
     }
     const char *end = NULL;
     cJSON *v = cJSON_ParseWithLengthOpts(json, length, &end, 0);
     if (!v) return NULL;
     while ((size_t)(end - json) < length && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n')) ++end;
-    if ((size_t)(end - json) != length || !canonical(v, discard, NULL, 0)) { cJSON_Delete(v); return NULL; }
+    WireNumbers wire = {json, length, 0, v, is_number, context};
+    if ((size_t)(end - json) != length || !validate_numbers(v, &wire, 0) ||
+        !canonical(v, discard, NULL, 0)) { cJSON_Delete(v); return NULL; }
     return v;
 }
+cJSON *ABoxMqttDigest_Parse(const char *json, size_t length)
+{ return ABoxMqttDigest_ParseProfile(json, length, NULL, NULL); }
 static int hash(void *ctx, const char *s, size_t n)
 { ABoxSha256_Update(ctx, (const uint8_t *)s, (uint32_t)n); return 1; }
 int ABoxMqttDigest_Value(const cJSON *value, uint8_t digest[32])

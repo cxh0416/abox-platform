@@ -165,6 +165,9 @@ add_test(NAME abox_mqtt_digest_test COMMAND abox_mqtt_digest_test)
 add_test(NAME abox_mqtt_digest_vectors
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_mqtt_digest_vectors.py
         $<TARGET_FILE:abox_mqtt_digest_test>)
+add_test(NAME abox_mqtt_numbers
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_mqtt_numbers.py
+        $<TARGET_FILE:abox_mqtt_digest_test>)
 
 # Optional adapters from a product checkout; no target/firmware execution.
 if(ABOX_STAGE2_PRODUCT_ROOT)

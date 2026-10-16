@@ -19,7 +19,7 @@
 |---|---|
 | 公共原第 36.4 节的只读校验器入口 | [tools/validate_mqtt_v4.py](../../../tools/validate_mqtt_v4.py)，运行说明见本文第 5 节；固定向量仍由公共附录规范性引用 |
 | 巡防车 stopReason=1 的历史名称 remote_disabled | 本记录：原文仅说明历史编号；正式协议保留 `1 / reserved`、正式运行不产生及后续编号不变，不重新引入历史许可语义 |
-| 巡防车原文的内部运维/标定入口 | 既有 [内部运维协议 V2.3](../../../../Patrol_Vehicle_Chassis/docs/protocols/A-BOX内部运维协议V2.3.md)，正文未修改；正式业务协议不再将它作为对外入口 |
+| 巡防车原文的内部运维/标定入口 | 既有 [巡防车底盘内部运维协议 V2.3](../../../../Patrol_Vehicle_Chassis/docs/protocols/A-BOX巡防车底盘内部运维协议-V2.3.md)，正文未修改；正式业务协议不再将它作为对外入口 |
 
 ## 2. 篇幅比较
 

@@ -25,6 +25,12 @@ static void check_stream(void)
     }
     Text out = {{0}, 0};
     assert(!ABoxMqttDigest_WriteInteger(INT64_MIN, capture, &out) && !out.used);
+    assert(!ABoxMqttDigest_WriteNumber(NAN, capture, &out) && !out.used);
+    assert(!ABoxMqttDigest_WriteNumber(INFINITY, capture, &out) && !out.used);
+    assert(!ABoxMqttDigest_WriteNumber(-0.0, capture, &out) && !out.used);
+    assert(!ABoxMqttDigest_WriteNumber(1.5, NULL, &out));
+    out.used = sizeof(out.text) - 1;
+    assert(!ABoxMqttDigest_WriteNumber(1.5, capture, &out));
     uint8_t digest[32], zero[32] = {0}; memset(digest, 0xaa, 32);
     assert(!ABoxMqttDigest_RequestStream("test", 0, 0, fail_params, NULL, digest));
     assert(!memcmp(digest, zero, 32));
@@ -36,6 +42,17 @@ static void check_stream(void)
 
 static int output(void *ctx, const char *s, size_t n)
 { (void)ctx; return fwrite(s, 1, n, stdout) == n; }
+static int number_field(void *context, const cJSON *root, const cJSON *number)
+{
+    (void)context;
+    const cJSON *params = cJSON_GetObjectItemCaseSensitive(root, "params");
+    const cJSON *values = cJSON_GetObjectItemCaseSensitive(params, "values");
+    if (cJSON_IsArray(values))
+        for (const cJSON *p = values->child; p; p = p->next)
+            if (p == number) return 1;
+    return root == number || number == cJSON_GetObjectItemCaseSensitive(root, "value") ||
+        number == cJSON_GetObjectItemCaseSensitive(params, "value");
+}
 static void check_sha(void)
 {
     ABoxSha256 ctx; uint8_t digest[32]; char hex[65];
@@ -63,12 +80,24 @@ int main(int argc, char **argv)
         }
         return 0;
     }
+    if (!strcmp(argv[1], "number-batch")) {
+        char line[4096];
+        while (fgets(line, sizeof(line), stdin)) {
+            cJSON *number = ABoxMqttDigest_ParseProfile(line, strlen(line), number_field, NULL);
+            if (!number) puts("INVALID");
+            else { assert(ABoxMqttDigest_Canonical(number, output, NULL)); putchar('\n'); cJSON_Delete(number); }
+        }
+        return 0;
+    }
     char input[4096]; uint8_t digest[32];
     size_t size = fread(input, 1, sizeof(input), stdin);
     if (size == sizeof(input)) return 2;
-    cJSON *v = ABoxMqttDigest_Parse(input, size);
+    int numbers = !strncmp(argv[1], "number", 6);
+    cJSON *v = numbers ? ABoxMqttDigest_ParseProfile(input, size, number_field, NULL) :
+        ABoxMqttDigest_Parse(input, size);
     if (!v) return 2;
-    int ok = !strcmp(argv[1], "request") ? ABoxMqttDigest_Request(v, NULL, digest) : ABoxMqttDigest_Value(v, digest);
+    int ok = (!strcmp(argv[1], "request") || !strcmp(argv[1], "number-request")) ?
+        ABoxMqttDigest_Request(v, NULL, digest) : ABoxMqttDigest_Value(v, digest);
     if (!ok) { cJSON_Delete(v); return 2; }
     for (unsigned i = 0; i < 32; ++i) printf("%02x", digest[i]);
     putchar('\n'); ok = ABoxMqttDigest_Canonical(v, output, NULL); putchar('\n');
