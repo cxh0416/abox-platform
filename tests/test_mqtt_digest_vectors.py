@@ -19,7 +19,7 @@ def run(exe, payload, mode="value", valid=True):
 
 def main(exe):
     # All 60001 existing Patrol milli-degree values vs ECMAScript/JCS number
-    # serialization, without admitting floats in the generic wire parser.
+    # serialization; the legacy wire parser still requires strict Integers.
     actual = subprocess.run([exe, "milli-range"], check=True, capture_output=True).stdout.replace(b"\r\n", b"\n")
     node = shutil.which("node")
     if node:

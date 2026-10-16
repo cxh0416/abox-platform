@@ -165,6 +165,10 @@ int ABoxCloudService_Init(ABoxCloudService *service,
     return 1;
 }
 
+void ABoxCloudService_SetStateCount(ABoxCloudService *s, uint8_t count)
+{ if (s && !s->in_flight) { s->state_count=count?count:1U; s->state_index=0; } }
+void ABoxCloudService_SetProductStatePending(ABoxCloudService *s, int pending)
+{ if (s) s->product_state_pending=pending?1U:0U; }
 void ABoxCloudService_NetworkChanged(ABoxCloudService *service)
 {
     if (!service) return;
@@ -174,6 +178,7 @@ void ABoxCloudService_NetworkChanged(ABoxCloudService *service)
     service->bootstrap_stage = 0U;
     service->in_flight = ABOX_CLOUD_JOB_NONE;
     service->operation = 0U;
+    service->state_index=0U; service->product_state_pending=0U;
     /* A confirmed sync response remains confirmed; its correlated report
      * resumes after the new connection's complete bootstrap state. */
 }
@@ -278,6 +283,7 @@ int ABoxCloudService_Next(ABoxCloudService *service, uint32_t now,
     memset(job, 0, sizeof(*job));
     if (!service->ready || service->in_flight != ABOX_CLOUD_JOB_NONE) return 0;
     job->generation = service->generation;
+    job->state_index=service->state_index;
     if (service->response_pending && service->options.response_preempts_bootstrap) {
         job->kind = ABOX_CLOUD_JOB_RESPONSE;
         job->request_id = service->response_request_id;
@@ -286,6 +292,8 @@ int ABoxCloudService_Next(ABoxCloudService *service, uint32_t now,
     else if (service->bootstrap_stage == 3U) {
         job->kind = ABOX_CLOUD_JOB_STATE;
         job->reason = service->ever_ready ? "reconnect" : "startup";
+    } else if (service->product_state_pending) {
+        job->kind=ABOX_CLOUD_JOB_PRODUCT_STATE;
     } else if (service->response_pending) {
         job->kind = ABOX_CLOUD_JOB_RESPONSE;
         job->request_id = service->response_request_id;
@@ -370,6 +378,12 @@ ABoxCloudJobKind ABoxCloudService_Receipt(ABoxCloudService *service,
     service->in_flight = ABOX_CLOUD_JOB_NONE;
     service->operation = 0U;
     if (!confirmed) return ABOX_CLOUD_JOB_NONE;
+    if (kind==ABOX_CLOUD_JOB_PRODUCT_STATE) { service->product_state_pending=0U; return kind; }
+    if (kind==ABOX_CLOUD_JOB_STATE) {
+        if (service->state_index+1U<service->state_count) { ++service->state_index; return ABOX_CLOUD_JOB_NONE; }
+        service->state_index=0U;
+    }
+
     if (kind == ABOX_CLOUD_JOB_MANIFEST && service->bootstrap_stage == 1U)
         service->bootstrap_stage = 2U;
     else if (kind == ABOX_CLOUD_JOB_HEARTBEAT && service->bootstrap_stage == 2U)

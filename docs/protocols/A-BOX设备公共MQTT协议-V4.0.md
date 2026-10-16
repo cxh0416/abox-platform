@@ -1,14 +1,16 @@
 # A-BOX 设备公共 MQTT 协议
 
-**文档修订：V4.0 正式冻结版**
+**文档修订：V4.0（业务数值规则修订）**
 
 **报文版本：`4.0`**
 
-**状态：Frozen Public Contract（正式冻结）**
+**状态：Public Contract（公共规范）**
 
-**修订日期：2026-09-30**
+**修订日期：2026-10-15**
 
-五 Topic、公共消息模型、路由、Manifest 能力治理及本文参数均已冻结。兼容扩展遵循第 9 节；改变既有公共语义必须升级公共协议主版本。
+五 Topic、公共消息模型、路由、Manifest 能力治理及既有公共字段语义保持冻结。业务数值按第 3.2 节区分 Integer 与 Number；兼容扩展遵循第 9 节，改变既有公共字段语义必须升级公共协议主版本。
+
+本文是 V4.0 公共合同的完整规范与权威定义，理解和实现不依赖任何仓库文件。Registry、测试向量等辅助材料可用于实现、CI 和一致性测试，必须遵循本文，不得另行定义或覆盖公共语义；发现不一致时应修正辅助材料。
 
 | 查阅项 | 定义位置 |
 |---|---|
@@ -31,9 +33,15 @@
 | 设备身份 | 每台物理 A-BOX 由平台分配全局唯一 `deviceId`，用于 Topic，不要求在每条 Payload 中重复 |
 | Request 路由 | `command + params`；执行前必须唯一确定目标操作 |
 | Report 路由 | 非心跳主动业务消息统一进入 `/report`，按 `reportType + reportName` 路由；业务数据放在 `payload` |
+| Response 归属 | Topic 中的 `deviceId` 与 `data.requestId` 关联原请求及其目标设备；不得将其他设备或未关联请求的响应用于完成当前操作 |
+| Heartbeat 归属 | 只更新 Topic 中该 `deviceId` 的通信在线状态；业务能力是否已确认按第 7.3 节判断，不能将一次心跳应用到其他设备 |
 | Profile | 能力、版本及业务语义的定义单位；一台设备可实现多个，不要求每条 Request/Report 携带 Profile 标识；Manifest 不参与逐条消息路由 |
 | 单实例 | 不要求实例标识 |
 | 多实例 | Report 使用 `instanceId`，请求目标字段由 Profile 在 `params` 中定义；具体约束见第 5.3 节 |
+
+**多产品业务接入：** 公共协议与对应产品协议共同定义业务接入所需的消息合同。产品协议须明确适用的 Profile、版本及业务报告；平台从每台设备的 Manifest 识别其支持的业务能力，并按第 7.3 节确认当前能力。统一订阅后，各设备仍按 `deviceId` 分别维护身份、心跳、Manifest、状态与请求记录；不同设备即使使用相同 `command` 或 `reportName`，也不能作为同一设备的状态或操作处理。
+
+Profile 表示业务能力，不是互斥的产品类型标签；同设备支持多个 Profile 时可分别接入相应业务。接入某产品业务不要求预先取得额外的“`deviceId` → 产品类型”对照表，也不要求了解其他产品的协议、平台源码或 Registry 文件。不得根据 `deviceId` 的命名、固件名称、某个通用命令或收到消息的订阅连接猜测产品归属。逐条 Report 仍按上表路由，Response 返回原请求；未知能力或报告不能套用当前产品的业务字段解释。
 
 内部总线、拓扑、轮询、控制仲裁、故障恢复算法不属于公共协议。设备信息、日志、配置、诊断、OTA 等继续使用独立 `/internal/*` 协议，允许离线恢复的运维业务不得与公共实时控制混用。
 
@@ -113,13 +121,18 @@ ACL 必须由服务端身份绑定生成；禁止跨设备发布/订阅、用通
 
 | 项目 | 规则 |
 |---|---|
-| 所有公共数字 | 仅允许 `-9007199254740991..9007199254740991` 的安全整数；小数、指数形式、负零、NaN、无穷值均非法 |
+| `Integer` 字段 | 仅允许 `-9007199254740991..9007199254740991` 的安全整数，并满足字段自身范围；使用十进制整数词法，禁止小数、指数形式、前导 `+`、多余前导零和负零 |
+| 业务 `Number` 字段 | `params`、`result`、`payload` 中由 Profile 明确定义为 Number 的字段允许整数、小数和 JSON 指数形式；数值按 IEEE 754 binary64（双精度）的舍入到最近值、相同距离取偶数规则解释，且必须满足 Profile 的范围及分辨率要求 |
+| 公共数值字段 | `timestamp`、`expiresAt`、`code`、`sequence`、计数等保持各自 Integer 定义；不得因支持业务小数改成 Number、字符串或改变单位 |
+| 非法数字 | NaN、正负无穷、负零（含 `-0.0`、`-0e0`）及转换为 binary64 时溢出或非零下溢为零的数字均非法 |
 | Epoch 毫秒 | `timestamp`、`expiresAt` 及未来 Epoch 字段具有 64 位整数语义；必须输出非负十进制整数，不接受字符串、小数、指数、前导 `+` 或负零；不得因浮点转换截断、舍入或输出科学计数法 |
 | 重复 JSON Key | 任意 Object 重复 Key 均非法，必须拒绝，不能选择其中一个值 |
 | 未知字段 | 必须忽略可安全忽略的扩展字段，不能仅因未知可选字段丢弃合法消息 |
 | 未知业务枚举 | 必须保留原值，可降级展示 `unknown`；不得解释为成功、完成、停止、关闭、正常或其他安全状态 |
 
-整数边界和非法词法向量见[规范性附录 A](#a1-v4-json-canonicalization)。
+Profile 必须为每个 Number 字段定义单位、范围、分辨率及无效值表达；未另行规定时，超出范围或分辨率的请求值须拒绝，不得静默舍入或截断后执行。分辨率按数值判断，不要求固定小数位数；`1.5` 与 `1.500` 表示相同数值。Number 不提供任意精度十进制保证；需要精确整数的字段仍使用 Integer。
+
+业务小数能力以已确认的 Profile 版本及其字段定义为准；仅有 `version="4.0"` 不表示任意业务字段都接受小数。不得向未明确支持该 Number 字段的设备下发小数参数。数值规范化、整数边界及非法词法向量见[规范性附录 A](#a1-v4-json-canonicalization)。
 
 ### 3.3 长度与大小
 
@@ -446,6 +459,10 @@ instances 只声明能力配置，不是逐消息路由。Report 实例来自当
 
 设备必须在连接建立、固件版本变化、Profile 集合/版本变化、影响能力的配置变化后发布 Manifest。Retained Manifest 只代表最近声明，不证明当前在线。
 
+Manifest 由设备主动发布，平台通过订阅第 2.1 节的 Manifest Topic 获取，不需要先发送查询请求。Broker 保存了该 Topic 的 Retained Manifest 时，新订阅者会收到最近声明，即使设备当时离线。公共 V4 没有“查询 Manifest”命令；`sync_state` 只请求完整业务状态，不用于查询或刷新 Manifest。
+
+若平台尚未收到 Manifest，应等待该设备的主动发布并保持能力未确认；心跳可以用于记录该设备的通信在线情况，但不能据此猜测其业务能力。若先收到心跳、后收到 Manifest，平台在收到 Manifest 后以匹配的当前在线心跳按本节条件确认；不得将其他设备的 Manifest 或心跳用于补足确认。
+
 | 模式 | 当前在线实例能力确认条件 |
 |---|---|
 | 带 manifestId | 当前在线心跳与 Retained Manifest 的 manifestId 相同 |
@@ -467,9 +484,22 @@ MAJOR、MINOR 均为 `0..65535` 的 uint16 十进制数，无前导零，格式 
 | 相同 MAJOR，设备 MINOR 较高 | 使用已知兼容子集，忽略未知兼容扩展 |
 | 设备 MINOR 较低 | 不得使用更高 MINOR 引入的能力 |
 
+### 7.5 平台首次接入与恢复流程
+
+业务接入方阅读本文和对应产品协议后，按以下流程处理；业务 Profile、报告名称及操作完成边界由产品协议给出：
+
+1. **建立订阅。** 按第 2.1 节订阅目标设备的 Manifest、Heartbeat、Report 和 Response；需要发现多台设备时可统一订阅。先建立响应与报告订阅，再发送业务请求，避免遗漏立即返回的结果。
+2. **识别设备与能力。** 从每条 Topic 提取 `deviceId`，分别维护设备记录。Manifest 中 Profile 按名称查找，不能依赖数组顺序；按第 7.4 节识别支持的版本。一个通用 Profile 或命令只能证明相应能力，不能据此假定设备支持另一产品的完整能力集合。
+3. **确认当前能力。** 按第 7.3 节将同一设备的 Manifest 与当前在线心跳匹配。仅收到 Retained Manifest 不表示设备在线，只有心跳也不表示某项业务能力可用；产品协议不需要另设“启用”或“查询能力”命令来完成此确认。
+4. **恢复状态。** 设备启动、重连后主动补发完整 State；平台也可按第 6 节发起 `sync_state`。以该次 Response 的 `expectedStates` 与同设备、同 `requestId` 的完整报告判断本轮完成，不得按 Profile 数量猜测报告数量。普通最新状态与本轮同步结果分别维护。
+5. **发送操作并关联结果。** 向选定设备发送其已确认能力支持的命令，保存目标 `deviceId`、`requestId` 和原请求。仅用该设备关联原请求的 Response 判断请求结果；实际完成边界按目标 Profile 解释。关联 Report 同样属于其 Topic 中的设备，不能完成另一设备的请求。
+6. **处理变化与不确定结果。** 离线、能力变化、旧消息、去重、重试及同步超时分别遵循第 2、4～7 节。某次本地等待超时或 MQTT PUBACK 不能替代业务结果；未知 Profile 或报告可以保留原始信息，但不能按另一产品的字段或成功语义解释。
+
 ## 8. Registry 与 Profile 登记要求
 
-Command、ReportName、Profile 以机器可校验 Registry 为唯一登记入口。全平台必须维护稳定的三类 Registry；公共 Core 登记见 [v4/registry.json](v4/registry.json)。
+Command、ReportName、Profile 必须统一登记，登记信息须可被机器校验，并满足本节的命名、唯一性和路由要求。Registry 是登记信息的实现载体，其具体文件、存储形式或组织方式不构成公共协议的规范性依赖。
+
+V4.0 的公共 Core 保留命令为 `sync_state`：操作类别 `QUERY`，`params=null`，用于请求当前启用的全部有状态 Profile 的完整状态；请求、响应及完成判定由第 6 节完整定义。
 
 | 对象 | 命名与唯一性 |
 |---|---|
@@ -512,22 +542,46 @@ command 表示能力而非输出器件、数量或内部对象。各 Profile 可
 | 变化 | 版本要求 |
 |---|---|
 | 新 Profile、command、reportName；Profile MINOR 扩展；params/payload 可忽略可选字段；专用响应码；Manifest 兼容可选字段 | 可继续 `version="4.0"` |
+| Profile 明确定义的业务 Number 字段及其小数编码 | 可继续 `version="4.0"`，须按已确认的 Profile 版本使用；不得将既有 Integer 字段直接改为 Number 或改变既有字段单位、范围、成功边界 |
 | 公共字段名、类型、必填性或既有语义；五 Topic 基本资源模型；requestId 基本幂等；reportId 去重；四类操作或 reportType 基本语义；会话安全边界 | 必须升级公共协议主版本 |
 
-全部既有参数及“五 Topic + 五类公共消息 + command 控制路由 + reportType/reportName 上报路由 + Manifest 能力治理”架构不得改变。除发现不可实现的安全缺陷外，后续评审不得重新引入强制 Component Resource Model 或重新拆分公共 Topic。
+业务 Number 的编码规则不改变既有 Integer 的合法输入、规范化字节或摘要。改变既有 Profile 字段类型、单位或其他语义仍按第 7.4 节处理；平台和设备只可使用双方支持的 Profile 合同，不能将只支持整数的实现视为已支持业务小数。
+
+除第 3.2 节按 Profile 声明的业务 Number 外，其余既有参数及“五 Topic + 五类公共消息 + command 控制路由 + reportType/reportName 上报路由 + Manifest 能力治理”架构不得改变。除发现不可实现的安全缺陷外，后续评审不得重新引入强制 Component Resource Model 或重新拆分公共 Topic。
 
 ## 附录 A（规范性）：Canonicalization 与摘要
 
 ### A.1 V4 JSON Canonicalization
 
-固定采用 **语义集合归一化 + RFC 8785 JCS**：
+固定采用 **语义集合归一化 + RFC 8785 JCS**。本协议使用的规范化规则如下：
 
-1. 解析时拒绝重复 Key、非法数字及不符合字段合同的值。
+1. 解析时拒绝重复 Key、非法数字及不符合字段合同的值。Key 在 JSON 解码后判重，例如 `"a"` 与 `"\u0061"` 是同一个 Key；非法 Unicode（含孤立代理项）不得进入规范化。
 2. Manifest profiles 先按 name 的 Unicode 码点顺序稳定排序；instances 按实例标识 Unicode 码点顺序稳定排序，重复实例非法。
 3. 其他数组保持顺序，只有 Core/Profile 明定为集合时可先排序。
-4. 随后执行 RFC 8785 JCS：对象递归排序、UTF-8 无 BOM、无额外空白、JCS 字符串转义。
+4. 随后执行 RFC 8785 JCS：所有对象（包括数组中的对象）的 Key 递归按解码后字符串的无符号 UTF-16 码元序列升序排列；从首个不同码元比较，同前缀时短字符串在前，不使用区域设置或转义文本排序。此步骤不重排数组。
 5. 不执行 Unicode Normalization；null 保留为 JSON null。字符串比较基于解码后的 Unicode 字符值，统一 UTF-8 Canonicalization。
-6. 数字词法及安全整数范围遵循第 3.2 节。
+6. 数字先按第 3.2 节及字段合同校验；Integer 输出最短十进制整数，Number 使用下述 JCS 数字规则。不得将 Number 转成字符串、按显示位数舍入、按业务容差合并不同值，或将非法输入转换成合法值后计算摘要。
+
+JCS 数字序列化按以下规则确定，字段分辨率不改变该规则：
+
+| 数字项 | Canonicalization 规则 |
+|---|---|
+| 数值模型 | Number 的十进制输入先按第 3.2 节转换为 binary64；同一 binary64 值必须使用同一文本，不保留原始小数位数或指数写法 |
+| 最短有效数字 | 对非零绝对值，选择读回为同一 binary64 值的最少位数十进制有效数字；多个同位数候选取最接近该 binary64 值者，距离相同取十进制尾数为偶数者 |
+| 普通十进制 | 绝对值满足 `1e-6 <= abs(value) < 1e21` 时使用普通十进制；小于 1 时保留整数位 `0`，不补末尾小数零或无意义小数点 |
+| 科学计数 | 其余非零值使用一个非零整数位及必要的小数位，随后为小写 `e` 和十进制指数；正指数必须带 `+`，负指数带 `-`，指数不含多余前导零，例如 `1e-7`、`1e+21` |
+| 符号和零 | 负数加前导 `-`，正数无前导 `+`；零只输出 `0`。第 3.2 节禁止的负零须先拒绝，不得规范化为合法零 |
+
+例如 Number 输入 `1`、`1.0`、`1e0` 均输出 `1`；`1.5`、`1.500`、`15e-1` 均输出 `1.5`。这些等价写法不适用于 Integer 字段的词法校验，`timestamp:1.0` 仍非法。
+
+| 序列化项 | 固定规则 |
+|---|---|
+| 对象与数组 | 使用 JSON 的括号、逗号和冒号；不输出 Token 间空白或末尾换行，字符串内部空白保留 |
+| 字符串 | 使用双引号；`"`、`\` 分别转义为 `\"`、`\\`；U+0008/0009/000A/000C/000D 分别使用 `\b`、`\t`、`\n`、`\f`、`\r`，其余 U+0000..001F 使用小写十六进制 `\u00hh`；其他字符直接输出，不额外转义 `/` 或非 ASCII 字符 |
+| 字面量 | 只输出 `true`、`false`、`null`，不能省略对象中的 null 值 |
+| Canonical Bytes | 将上述完整序列化结果编码为 UTF-8，不加 BOM、字符串终止符或额外换行 |
+
+上述序列化细则展开自既定的 [RFC 8785 JCS](https://www.rfc-editor.org/rfc/rfc8785.html)；V4 的数字范围和词法限制仍以第 3.2 节为准。
 
 对象字段乱序且值相同须产生相同 Canonical Bytes；普通 `[1,2]` 与 `[2,1]` 不同。Manifest Profile 顺序或 instances 顺序不同但集合相同须摘要一致；重复实例不能进入摘要。
 
@@ -541,14 +595,71 @@ command 表示能力而非输出器件、数量或内部对象。各 Profile 可
 
 command 和 params 必须参与；携带 expiresAt 时必须参与。不使用 expiresAt 时须省略，不能补 null。缺 params 非法，params:null 与 params:{} 不等价。业务集合先按 Profile 声明归一化。
 
-固定 `Request Digest = lowercase_hex(SHA-256(Canonical Bytes))`，64 位小写十六进制，不得选其他算法；外层 timestamp 不参与。
+固定 `Request Digest = lowercase_hex(SHA-256(Canonical Bytes))`：对完整 Canonical Bytes 计算 SHA-256，将 32 字节结果按字节顺序输出为 64 个小写十六进制字符，不加前缀，不得选其他算法；外层 timestamp 不参与。
 
 ### A.3 Manifest 摘要
 
 摘要输入为 Manifest data 除 manifestId 自身外的**全部字段**；V4 为 `{"firmware":"...","profiles":[...]}`。未来兼容新增字段默认参与，除非公共协议明确声明不参与。外层 version/timestamp 不参与。
 
-固定 `manifestId = "sha256:" + lowercase_hex(SHA-256(canonical_manifest_data))`，格式 `sha256:<64位小写十六进制>`，不得选其他算法。
+固定 `manifestId = "sha256:" + lowercase_hex(SHA-256(canonical_manifest_data))`。SHA-256 的输入为按 A.1 得到的完整 Canonical Bytes，结果编码与 A.2 相同，再加字面前缀 `sha256:`；不得选其他算法。摘要自身及该前缀不参与本次摘要输入。
 
-### A.4 固定测试向量
+### A.4 固定校验向量与一致性要求
 
-[v4/test-vectors.json](v4/test-vectors.json) 是规范性固定向量，跨设备和平台必须一致使用，覆盖 Manifest/请求逻辑对象 → Canonical Bytes → SHA-256，以及重复 Key、Unicode、对象乱序、普通数组换序、整数边界和非法数值词法。
+设备与平台须按 A.1～A.3 生成一致的 Canonical Bytes 和摘要。以下直接给出固定校验结果，读取其他文件不是完成校验的前提。Canonical JSON 列表示原始文本，其 UTF-8 编码才是摘要输入，不包含 Markdown 反引号或显示换行。
+
+Manifest 示例的归一化前摘要输入为：
+
+```json
+{"profiles":[{"instances":["2","1"],"version":"1.1","name":"example_b"},{"version":"1.0","name":"example_a"}],"firmware":"test-1.0.0"}
+```
+
+| 校验项 | Canonical JSON | SHA-256，小写十六进制 |
+|---|---|---|
+| Manifest 集合归一化 | `{"firmware":"test-1.0.0","profiles":[{"name":"example_a","version":"1.0"},{"instances":["1","2"],"name":"example_b","version":"1.1"}]}` | `c59a64516ec2b9a7baa3695d65783d375000b6d323c4446e7df9abe6e144bda3` |
+| Unicode 原文编码 | `{"msg":"格口打开"}` | `da2ac1209441101787426bfdc0516d6b2b5a6dddb621a2d4c2b036bf7f9ac6bd` |
+| 普通数组，顺序一 | `{"values":[1,2,3]}` | `abe0a9abcc957f9f5aa04d68c4f49fadee7c4b62343e403a3a1c0b646519d53c` |
+| 普通数组，顺序二 | `{"values":[3,2,1]}` | `9292645f8764edcacb2ee3329165d4fb46edb38160866aaa35850bfd5333d384` |
+| 最大安全整数 | `{"timestamp":9007199254740991}` | `cc8af82fdaab301cdbc3ccf2ed87f8401eeee55d745544f3c31b813e487828ca` |
+| 请求逻辑对象，无 expiresAt | `{"command":"sync_state","params":null}` | `c51070fb537c79f32338f8511dbd8538d4e4c2f9b50cf6f362c54c87f4c7322f` |
+| 请求逻辑对象，params 为 null | `{"command":"example_action","expiresAt":1770186093333,"params":null}` | `fda1437572c08f464d1fba64c7aa39668ac9e5349698108a4ce9813e12adb124` |
+| 请求逻辑对象，params 为对象 | `{"command":"example_action","expiresAt":1770186093333,"params":{}}` | `b59db125242c3ccc0a9b5d298ddde8793c3ca89f056ad3607d304d08ff2dbb58` |
+| Number 小数 | `{"value":1.5}` | `45ad93d73171ea0139bdcfebb9eb613c2a5ae9aa299bf98faa4592b2446e1d87` |
+| Number 整数值 | `{"value":1}` | `48208f9428d64634bd8e28ff345bf0eab60d53c18fa2fbdb0b9bc1e84df2b5f6` |
+| Number 普通十进制边界 | `{"value":0.000001}` | `bc1c982dd4e677d72ff5821cc67554e045e838a31ddc55fa0fdb1a32d5a1dce9` |
+| Number 负指数 | `{"value":1e-7}` | `910750038eb30a40d06da88009b6259aabaf3751b3cb212c616d51abb6b008a4` |
+| Number 正指数 | `{"value":1e+21}` | `776bf0d292f3767fdfca3fdc9683d0ba51886b8e6e79cd228a41bafcfa9a1a6f` |
+| Number binary64 最短表示 | `{"value":333333333.3333333}` | `ae8992f4ba3b38d67e3b504f5c0356d51bc8c5b8394a2aeea6241623003c0635` |
+| 请求逻辑对象，Number 参数 | `{"command":"example_action","params":{"value":1.5}}` | `b0dd17a524b8711925f45327f2eaa1d878a91a46cf54f487b24ded37dac2fe24` |
+
+该 Manifest 示例的 `manifestId` 为 `sha256:c59a64516ec2b9a7baa3695d65783d375000b6d323c4446e7df9abe6e144bda3`。Number 示例中的 `value` 按允许相应范围和分辨率的 Number 字段校验；不是公共新增字段。请求逻辑对象示例只验证摘要，不授予设备任何业务能力或改变命令安全规则。
+
+一致性校验还须满足：
+
+| 输入变化 | 必须得到的结果 |
+|---|---|
+| 对象 Key 顺序或 Token 间空白改变，解码后的值相同 | Canonical Bytes 和摘要相同 |
+| Number 输入 `1.5`、`1.500` 或 `15e-1` | 规范化为 `1.5`，Canonical Bytes 和摘要相同；`1`、`1.0`、`1e0` 同理规范化为 `1` |
+| Number 输入 `0.000001` / `1e-6`，或 `0.0000001` / `1e-7` | 前一组规范化为 `0.000001`，后一组为 `1e-7`；同组摘要相同 |
+| Number 输入 `333333333.33333329` | 按 binary64 和最短有效数字规则规范化为 `333333333.3333333`，不是按 Profile 显示精度四舍五入 |
+| Number 经 binary64 解释后数值不同 | 不得因显示结果相同或落在业务容差内合并；相同 requestId 仍按逻辑内容比较 |
+| 字符使用直接 Unicode 或等值 JSON 转义 | 结果相同，例如 `"格"` 与 `"\u683c"` |
+| 字符仅在 Unicode Normalization 后等价 | 不合并，例如 `"\u00e9"` 与 `"e\u0301"` 保持不同 |
+| Manifest profiles / instances 顺序改变，集合不变 | 摘要相同；重复 Profile 名称或实例标识仍非法 |
+| 普通数组顺序改变 | 规范化结果保留顺序差异，不能作为同一逻辑内容 |
+| 请求的 command、params 或存在的 expiresAt 改变 | 重新计算摘要，不能仅凭相同 requestId 判为同一内容；null 与 `{}` 不等价 |
+| 仅请求外层 timestamp 改变，逻辑对象不变 | Request Digest 相同；不改变第 4.3 节的重试要求 |
+
+以下原始 JSON 必须在生成摘要前拒绝；不得先解析覆盖重复值或舍入非法数字后再计算：
+
+| 原始 JSON | 拒绝原因 |
+|---|---|
+| `{"a":1,"a":2}` 或 `{"a":1,"\u0061":2}` | 解码后存在重复 Key |
+| `{"timestamp":9007199254740992}` | 超出安全整数上界；小于 -9007199254740991 同样非法 |
+| `{"timestamp":1.5}` 或 `{"timestamp":1.0}` | Integer 字段禁止小数词法；业务 Number 的小数不属于此非法项 |
+| `{"timestamp":1e3}` | Integer 字段禁止指数词法，即使数值为整数也非法 |
+| `{"timestamp":-0}` | 负零 |
+| `{"value":-0.0}` 或 `{"value":-0e0}` | Number 同样禁止负零 |
+| `{"value":1e400}` 或 `{"value":1e-400}` | 转换为 binary64 时溢出或非零下溢为零 |
+| `{"value":NaN}` 或 `{"value":Infinity}` | 非法 JSON 数字；不得先转换成 null |
+
+辅助测试向量必须从上述规则和固定结果派生；通过有限向量不能替代对字段合同、非法输入、集合归一化及摘要输入范围的完整校验。

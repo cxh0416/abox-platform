@@ -6,7 +6,7 @@ endforeach()
 target_link_libraries(abox_mqtt_v4 PUBLIC abox::core)
 target_sources(abox_mqtt_v4 PRIVATE src/abox_sha256.c)
 
-add_library(abox_mqtt_digest STATIC src/abox_mqtt_digest.c)
+add_library(abox_mqtt_digest STATIC src/abox_mqtt_digest.c src/abox_mqtt_number.c)
 add_library(abox::mqtt_digest ALIAS abox_mqtt_digest)
 target_include_directories(abox_mqtt_digest PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(abox_mqtt_digest PUBLIC abox::mqtt_v4 abox::cjson)

@@ -651,7 +651,9 @@ int ABoxMqttEc800_Publish(ABoxMqttEc800 *m, const char *topic,
     snprintf(command, sizeof(command), "AT+QMTPUBEX=%u,%u,%u,%u,\"%s\",%u",
              m->config.client_index, msg_id, qos, retain,
              topic, (unsigned)length);
-    memcpy(m->buffers.publish_payload, payload, length);
+    /* The owner may encode directly in the idle publish workspace. */
+    if (m->buffers.publish_payload != payload)
+        memcpy(m->buffers.publish_payload, payload, length);
     if (!submit(m, command, m->config.publish_timeout_ms)) return 0;
     ++m->next_operation;
     if (!m->next_operation) ++m->next_operation;

@@ -87,5 +87,75 @@
       "name": "negative-zero",
       "json": "{\"timestamp\":-0}"
     }
+  ],
+  "numberValid": [
+    {
+      "name": "number-fraction",
+      "json": "{\"value\":1.500}",
+      "canonical": "{\"value\":1.5}",
+      "sha256": "45ad93d73171ea0139bdcfebb9eb613c2a5ae9aa299bf98faa4592b2446e1d87"
+    },
+    {
+      "name": "number-integer-value",
+      "json": "{\"value\":1e0}",
+      "canonical": "{\"value\":1}",
+      "sha256": "48208f9428d64634bd8e28ff345bf0eab60d53c18fa2fbdb0b9bc1e84df2b5f6"
+    },
+    {
+      "name": "number-decimal-threshold",
+      "json": "{\"value\":1e-6}",
+      "canonical": "{\"value\":0.000001}",
+      "sha256": "bc1c982dd4e677d72ff5821cc67554e045e838a31ddc55fa0fdb1a32d5a1dce9"
+    },
+    {
+      "name": "number-negative-exponent",
+      "json": "{\"value\":0.0000001}",
+      "canonical": "{\"value\":1e-7}",
+      "sha256": "910750038eb30a40d06da88009b6259aabaf3751b3cb212c616d51abb6b008a4"
+    },
+    {
+      "name": "number-positive-exponent",
+      "json": "{\"value\":1e21}",
+      "canonical": "{\"value\":1e+21}",
+      "sha256": "776bf0d292f3767fdfca3fdc9683d0ba51886b8e6e79cd228a41bafcfa9a1a6f"
+    },
+    {
+      "name": "number-shortest-binary64",
+      "json": "{\"value\":333333333.33333329}",
+      "canonical": "{\"value\":333333333.3333333}",
+      "sha256": "ae8992f4ba3b38d67e3b504f5c0356d51bc8c5b8394a2aeea6241623003c0635"
+    },
+    {
+      "name": "number-request",
+      "json": "{\"command\":\"example_action\",\"params\":{\"value\":15e-1}}",
+      "canonical": "{\"command\":\"example_action\",\"params\":{\"value\":1.5}}",
+      "sha256": "b0dd17a524b8711925f45327f2eaa1d878a91a46cf54f487b24ded37dac2fe24"
+    }
+  ],
+  "numberInvalid": [
+    {
+      "name": "number-negative-zero",
+      "json": "{\"value\":-0.0}"
+    },
+    {
+      "name": "number-negative-zero-exponent",
+      "json": "{\"value\":-0e0}"
+    },
+    {
+      "name": "number-overflow",
+      "json": "{\"value\":1e400}"
+    },
+    {
+      "name": "number-underflow",
+      "json": "{\"value\":1e-400}"
+    },
+    {
+      "name": "number-nan",
+      "json": "{\"value\":NaN}"
+    },
+    {
+      "name": "number-infinity",
+      "json": "{\"value\":Infinity}"
+    }
   ]
 }
