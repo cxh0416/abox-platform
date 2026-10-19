@@ -838,7 +838,10 @@ static void command_done(ABoxBootV2AtResult result, void *user)
         command_succeeded();
         return;
     }
-    if (g.seeding && result == ABOX_BOOT_V2_AT_ERROR &&
+    /* MQTT teardown is idempotent for local seeding and candidate downloads:
+     * EC800 returns ERROR when the session is already disconnected or closed.
+     * Timeouts and send failures still abort before touching the slot. */
+    if (result == ABOX_BOOT_V2_AT_ERROR &&
         (g.state == ST_MQTT_DISC || g.state == ST_MQTT_CLOSE)) {
         command_succeeded();
         return;
