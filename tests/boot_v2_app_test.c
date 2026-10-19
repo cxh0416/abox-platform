@@ -311,12 +311,14 @@ static void test_ca_error_is_distinct(void)
     assert(strstr(last_log, "CA_UPLOAD") != 0);
 }
 
-static void test_candidate_download(void)
+static void test_candidate_download(ABoxBootV2AtResult disconnect_result,
+                                    ABoxBootV2AtResult close_result)
 {
     ABoxBootV2AppRequest request;
     ABoxBootV2Record state;
     uint8_t image[128];
 
+    prepare_flash();
     reset_transport();
     init_app();
     complete_probes();
@@ -339,8 +341,9 @@ static void test_candidate_download(void)
     assert(ABoxBootV2App_Start(&request));
     assert(mqtt_paused);
 
-    complete(ABOX_BOOT_V2_AT_OK); /* QMTDISC */
-    complete(ABOX_BOOT_V2_AT_OK); /* QMTCLOSE */
+    complete(disconnect_result); /* QMTDISC */
+    assert(strstr(command, "QMTCLOSE") != 0);
+    complete(close_result); /* QMTCLOSE */
     {
         uint32_t guard = 100U;
         while (!ABoxBootV2App_TakeInstallReady() && guard--) {
@@ -385,7 +388,8 @@ static void test_candidate_download(void)
     assert(strcmp(state.image_version, "abox-v2-next") == 0);
 }
 
-static void test_local_stable_seed_does_not_use_http(void)
+static void test_local_stable_seed_does_not_use_http(ABoxBootV2AtResult disconnect_result,
+                                                    ABoxBootV2AtResult close_result)
 {
     ABoxBootV2Record state;
     ABoxBootV2Descriptor descriptor;
@@ -416,8 +420,9 @@ static void test_local_stable_seed_does_not_use_http(void)
     assert(strcmp(ABoxBootV2App_Phase(), "SEEDING_LOCAL") == 0);
     assert(strcmp(ABoxBootV2App_StableSeedSource(), "local_flash") == 0);
     assert(strstr(command, "QMTDISC") != 0);
-    complete(ABOX_BOOT_V2_AT_OK);
-    complete(ABOX_BOOT_V2_AT_OK);
+    complete(disconnect_result);
+    assert(strstr(command, "QMTCLOSE") != 0);
+    complete(close_result);
     assert(strstr(command, "QFDEL=\"fw_slot0.bin\"") != 0);
     assert(strstr(command, "QHTTP") == 0);
     complete(ABOX_BOOT_V2_AT_ERROR);
@@ -504,15 +509,19 @@ static void test_matching_stable_slot_is_checked_only_once(void)
         assert(transfer[index] == 0x5AU);
 }
 
-static void test_download_failure_waits_before_retry(void)
+static void test_download_failure_waits_before_retry(ABoxBootV2AtResult failure,
+                                                     uint8_t fail_on_close)
 {
     ABoxBootV2AppRequest request;
+    ABoxBootV2Record before;
+    ABoxBootV2Record after;
 
     prepare_flash();
     reset_transport();
     init_app();
     complete_probes();
     finish_existing_ca();
+    assert(ABoxBootV2_StateLoad(&before));
 
     memset(&request, 0, sizeof(request));
     snprintf(request.url, sizeof(request.url),
@@ -521,11 +530,16 @@ static void test_download_failure_waits_before_retry(void)
     request.size = 128U;
     request.crc32 = 1U;
     assert(ABoxBootV2App_Start(&request));
-    complete(ABOX_BOOT_V2_AT_ERROR); /* QMTDISC fails */
+    if (fail_on_close) complete(ABOX_BOOT_V2_AT_OK);
+    complete(failure);
     assert(ABoxBootV2App_LastError() == ABOX_BOOT_V2_APP_ERROR_UFS);
-    assert(strstr(last_log, "MQTT_DISC") != 0);
-    assert(strstr(last_log, "AT+QMTDISC=0") != 0);
+    assert(strstr(last_log, fail_on_close ? "MQTT_CLOSE" : "MQTT_DISC") != 0);
+    assert(strstr(last_log, fail_on_close ? "AT+QMTCLOSE=0" : "AT+QMTDISC=0") != 0);
     assert(!mqtt_paused);
+    assert(!ABoxBootV2App_IsBusy());
+    assert(ABoxBootV2_StateLoad(&after));
+    assert(memcmp(&before, &after, sizeof(before)) == 0);
+    assert(payload_count == 0U);
     assert(!pending);
     ABoxBootV2App_Task();
     assert(!pending);
@@ -609,13 +623,22 @@ int main(void)
     test_probe_error_and_retry();
     test_missing_ca_is_uploaded_and_verified();
     test_ca_error_is_distinct();
-    test_local_stable_seed_does_not_use_http();
+    test_local_stable_seed_does_not_use_http(ABOX_BOOT_V2_AT_OK, ABOX_BOOT_V2_AT_OK);
+    test_local_stable_seed_does_not_use_http(ABOX_BOOT_V2_AT_ERROR, ABOX_BOOT_V2_AT_OK);
+    test_local_stable_seed_does_not_use_http(ABOX_BOOT_V2_AT_OK, ABOX_BOOT_V2_AT_ERROR);
+    test_local_stable_seed_does_not_use_http(ABOX_BOOT_V2_AT_ERROR, ABOX_BOOT_V2_AT_ERROR);
     test_matching_stable_slot_is_checked_only_once();
     prepare_flash();
-    test_candidate_download();
+    test_candidate_download(ABOX_BOOT_V2_AT_OK, ABOX_BOOT_V2_AT_OK);
+    test_candidate_download(ABOX_BOOT_V2_AT_ERROR, ABOX_BOOT_V2_AT_OK);
+    test_candidate_download(ABOX_BOOT_V2_AT_OK, ABOX_BOOT_V2_AT_ERROR);
+    test_candidate_download(ABOX_BOOT_V2_AT_ERROR, ABOX_BOOT_V2_AT_ERROR);
     test_mqtt_client_quiesce(0U);
     test_mqtt_client_quiesce(1U);
     test_delegated_mqtt_quiesce();
-    test_download_failure_waits_before_retry();
+    test_download_failure_waits_before_retry(ABOX_BOOT_V2_AT_TIMEOUT, 0U);
+    test_download_failure_waits_before_retry(ABOX_BOOT_V2_AT_TIMEOUT, 1U);
+    test_download_failure_waits_before_retry(ABOX_BOOT_V2_AT_SEND_FAIL, 0U);
+    test_download_failure_waits_before_retry(ABOX_BOOT_V2_AT_SEND_FAIL, 1U);
     return 0;
 }
