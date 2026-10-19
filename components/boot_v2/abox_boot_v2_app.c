@@ -813,7 +813,11 @@ static void command_done(ABoxBootV2AtResult result, void *user)
         provision_fail(ABOX_BOOT_V2_APP_ERROR_CA);
         return;
     }
-    if ((g.state == ST_FILE_DELETE || g.state == ST_HTTP_STOP) &&
+    /* Teardown is idempotent: EC800 returns ERROR when the MQTT client is
+     * already disconnected or closed, including during factory seeding.
+     * A timeout or send failure still aborts before touching the slot. */
+    if ((g.state == ST_MQTT_DISC || g.state == ST_MQTT_CLOSE ||
+         g.state == ST_FILE_DELETE || g.state == ST_HTTP_STOP) &&
         result == ABOX_BOOT_V2_AT_ERROR) {
         command_succeeded();
         return;
