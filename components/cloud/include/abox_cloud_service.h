@@ -94,6 +94,7 @@ typedef struct {
     ABoxCloudJobKind in_flight;
     uint8_t ready;
     uint8_t state_count, state_index, product_state_pending;
+    uint8_t periodic_state_count, in_flight_state_count;
     uint8_t ever_ready;
     uint8_t bootstrap_stage;
     uint8_t response_pending;
@@ -112,6 +113,10 @@ int ABoxCloudService_Init(ABoxCloudService *service,
 void ABoxCloudService_SetReady(ABoxCloudService *service, int ready, uint32_t now);
 void ABoxCloudService_NetworkChanged(ABoxCloudService *service);
 void ABoxCloudService_SetStateCount(ABoxCloudService *service, uint8_t count);
+/* Zero keeps the full set. Otherwise only this prefix is periodic; excluded
+ * states may have another periodic owner. Bootstrap, sync and event snapshots
+ * still include every state. */
+void ABoxCloudService_SetPeriodicStateCount(ABoxCloudService *service, uint8_t count);
 void ABoxCloudService_SetProductStatePending(ABoxCloudService *service, int pending);
 int ABoxCloudService_Bootstrapping(const ABoxCloudService *service);
 /* The caller retains its response topic/payload until RESPONSE confirmation. */

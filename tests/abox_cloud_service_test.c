@@ -66,9 +66,50 @@ static void test_poll(void) {
     assert(ABoxCloudService_Poll(&s, 0, 4) == ABOX_CLOUD_POLL_BLOCKED);
 }
 
+static void test_separate_periodic_owner(void)
+{
+    ABoxCloudService s;
+    ABoxCloudServiceOptions options={5000,5000,0};
+    ABoxCloudJob job;
+    uint64_t op=200;
+    assert(ABoxCloudService_Init(&s,&options,0));
+    ABoxCloudService_SetStateCount(&s,2);
+    ABoxCloudService_SetPeriodicStateCount(&s,1);
+    ABoxCloudService_SetReady(&s,1,0);
+    job=next(&s,0,ABOX_CLOUD_JOB_MANIFEST); confirm(&s,&job,++op,0);
+    job=next(&s,0,ABOX_CLOUD_JOB_HEARTBEAT); confirm(&s,&job,++op,0);
+    job=next(&s,0,ABOX_CLOUD_JOB_STATE); assert(job.state_index==0);
+    assert(ABoxCloudService_Begin(&s,&job,++op,0));
+    assert(ABoxCloudService_Receipt(&s,s.generation,op,1,0)==ABOX_CLOUD_JOB_NONE);
+    job=next(&s,0,ABOX_CLOUD_JOB_STATE); assert(job.state_index==1); confirm(&s,&job,++op,0);
+    job=next(&s,5000,ABOX_CLOUD_JOB_HEARTBEAT); confirm(&s,&job,++op,5000);
+    job=next(&s,5000,ABOX_CLOUD_JOB_STATE); assert(job.state_index==0);
+    assert(ABoxCloudService_Begin(&s,&job,++op,5000));
+    /* A newly queued full sync cannot turn this one-state periodic receipt
+     * into its first state, or erase the new correlation. */
+    assert(ABoxCloudService_QueueStateReport(&s,"new-sync","sync_state"));
+    assert(ABoxCloudService_Receipt(&s,s.generation,op,1,5000)==ABOX_CLOUD_JOB_STATE);
+    job=next(&s,5000,ABOX_CLOUD_JOB_STATE);
+    assert(job.state_index==0 && !strcmp(job.request_id,"new-sync"));
+    assert(ABoxCloudService_Begin(&s,&job,++op,5000));
+    assert(ABoxCloudService_Receipt(&s,s.generation,op,1,5000)==ABOX_CLOUD_JOB_NONE);
+    job=next(&s,5000,ABOX_CLOUD_JOB_STATE);
+    assert(job.state_index==1 && !strcmp(job.request_id,"new-sync")); confirm(&s,&job,++op,5000);
+    assert(!ABoxCloudService_Next(&s,5000,&job));
+    assert(ABoxCloudService_WakeState(&s,"local_changed"));
+    job=next(&s,5000,ABOX_CLOUD_JOB_STATE); assert(job.state_index==0);
+    assert(ABoxCloudService_Begin(&s,&job,++op,5000));
+    assert(ABoxCloudService_Receipt(&s,s.generation,op,1,5000)==ABOX_CLOUD_JOB_NONE);
+    job=next(&s,5000,ABOX_CLOUD_JOB_STATE); assert(job.state_index==1); confirm(&s,&job,++op,5000);
+    job=next(&s,10000,ABOX_CLOUD_JOB_HEARTBEAT); confirm(&s,&job,++op,10000);
+    job=next(&s,10000,ABOX_CLOUD_JOB_STATE); assert(job.state_index==0); confirm(&s,&job,++op,10000);
+    assert(!ABoxCloudService_Next(&s,10000,&job));
+}
+
 int main(void)
 {
     test_poll();
+    test_separate_periodic_owner();
     ABoxCloudBootstrap compact;
     ABoxCloudTxTracker tracker;
     ABoxCloudService service;

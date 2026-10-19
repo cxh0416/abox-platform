@@ -166,7 +166,9 @@ int ABoxCloudService_Init(ABoxCloudService *service,
 }
 
 void ABoxCloudService_SetStateCount(ABoxCloudService *s, uint8_t count)
-{ if (s && !s->in_flight) { s->state_count=count?count:1U; s->state_index=0; } }
+{ if (s && !s->in_flight) { s->state_count=count?count:1U; s->state_index=0; s->periodic_state_count=0; } }
+void ABoxCloudService_SetPeriodicStateCount(ABoxCloudService *s, uint8_t count)
+{ if (s && !s->in_flight && count<=s->state_count) s->periodic_state_count=count; }
 void ABoxCloudService_SetProductStatePending(ABoxCloudService *s, int pending)
 { if (s) s->product_state_pending=pending?1U:0U; }
 void ABoxCloudService_NetworkChanged(ABoxCloudService *service)
@@ -356,6 +358,9 @@ int ABoxCloudService_Begin(ABoxCloudService *service, const ABoxCloudJob *job,
         return 0;
     service->in_flight = job->kind;
     service->operation = operation;
+    service->in_flight_state_count = job->kind == ABOX_CLOUD_JOB_STATE &&
+        !service->bootstrap_stage && !service->sync_pending && !service->event_pending && service->periodic_state_count
+        ? service->periodic_state_count : service->state_count;
     service->in_flight_event_serial =
         job->kind == ABOX_CLOUD_JOB_STATE && service->event_pending &&
         !service->sync_pending && service->bootstrap_stage == 0U
@@ -380,7 +385,7 @@ ABoxCloudJobKind ABoxCloudService_Receipt(ABoxCloudService *service,
     if (!confirmed) return ABOX_CLOUD_JOB_NONE;
     if (kind==ABOX_CLOUD_JOB_PRODUCT_STATE) { service->product_state_pending=0U; return kind; }
     if (kind==ABOX_CLOUD_JOB_STATE) {
-        if (service->state_index+1U<service->state_count) { ++service->state_index; return ABOX_CLOUD_JOB_NONE; }
+        if (service->state_index+1U<service->in_flight_state_count) { ++service->state_index; return ABOX_CLOUD_JOB_NONE; }
         service->state_index=0U;
     }
 
