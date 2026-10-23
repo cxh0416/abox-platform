@@ -2,6 +2,8 @@
 
 当前平台版本为 `0.3.0`。平台同时提供可复用固件组件，以及面向统一 STM32F105/EC800 硬件基线的完整 Boot V2 工程。
 
+公共组件、公共 MQTT 规则和 Boot 在本仓库维护；各产品仓库维护业务 Profile、硬件适配和产品交付脚本，并固定平台提交。[内部协议文档中心](https://github.com/cxh0416/protocol-docs) 同步登记的源协议，不取代本仓库的协议维护入口。
+
 ## 目录说明
 
 - `components/core/include/`、`components/core/src/`：产品配置校验、硬件回调端口和平台版本接口。
