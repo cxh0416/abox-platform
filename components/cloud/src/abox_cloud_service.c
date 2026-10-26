@@ -214,9 +214,19 @@ int ABoxCloudService_QueueResponse(ABoxCloudService *service,
                    sizeof(service->response_request_id), request_id)) return 0;
     service->response_pending = 1U;
     service->response_sync = sync_state ? 1U : 0U;
+    service->response_count_valid = 0U;
     if (sync_state && service->pending_sync_request_id &&
         strcmp(service->pending_sync_request_id, request_id) == 0)
         service->pending_sync_request_id[0] = '\0';
+    return 1;
+}
+
+int ABoxCloudService_QueueSyncPlan(ABoxCloudService *service,
+                                   const char *request_id, uint8_t count)
+{
+    if (!ABoxCloudService_QueueResponse(service, request_id, 1)) return 0;
+    service->response_state_count = count;
+    service->response_count_valid = 1U;
     return 1;
 }
 
@@ -244,6 +254,7 @@ void ABoxCloudService_CancelResponse(ABoxCloudService *service)
     if (!service) return;
     service->response_pending = 0U;
     service->response_sync = 0U;
+    service->response_count_valid = 0U;
     service->response_request_id[0] = '\0';
     if (service->in_flight == ABOX_CLOUD_JOB_RESPONSE) {
         service->in_flight = ABOX_CLOUD_JOB_NONE;
@@ -264,6 +275,7 @@ int ABoxCloudService_QueueStateReport(ABoxCloudService *service,
     (void)copy_text(service->correlated_reason,
                     sizeof(service->correlated_reason), why);
     service->sync_pending = 1U;
+    service->sync_count_valid = 0U;
     if (++service->correlated_serial == 0U) ++service->correlated_serial;
     return 1;
 }
@@ -361,6 +373,9 @@ int ABoxCloudService_Begin(ABoxCloudService *service, const ABoxCloudJob *job,
     service->in_flight_state_count = job->kind == ABOX_CLOUD_JOB_STATE &&
         !service->bootstrap_stage && !service->sync_pending && !service->event_pending && service->periodic_state_count
         ? service->periodic_state_count : service->state_count;
+    if (job->kind == ABOX_CLOUD_JOB_STATE && !service->bootstrap_stage &&
+        service->sync_pending && service->sync_count_valid)
+        service->in_flight_state_count = service->sync_state_count;
     service->in_flight_event_serial =
         job->kind == ABOX_CLOUD_JOB_STATE && service->event_pending &&
         !service->sync_pending && service->bootstrap_stage == 0U
@@ -407,12 +422,18 @@ ABoxCloudJobKind ABoxCloudService_Receipt(ABoxCloudService *service,
             (void)copy_text(service->correlated_reason,
                             sizeof(service->correlated_reason), "sync_state");
             service->sync_pending = 1U;
+            service->sync_count_valid = service->response_count_valid;
+            service->sync_state_count = service->response_state_count;
+            if (service->sync_count_valid && !service->sync_state_count) service->sync_pending = 0U;
+            service->state_index = 0U;
             if (++service->correlated_serial == 0U) ++service->correlated_serial;
             service->response_sync = 0U;
         }
     } else if (kind == ABOX_CLOUD_JOB_STATE && service->sync_pending) {
-        if (service->correlated_serial == service->in_flight_correlated_serial)
+        if (service->correlated_serial == service->in_flight_correlated_serial) {
             service->sync_pending = 0U;
+            service->sync_count_valid = 0U;
+        }
         service->status_due = now + service->options.status_period_ms;
     } else if (kind == ABOX_CLOUD_JOB_STATE && service->event_pending) {
         if (service->event_serial == service->in_flight_event_serial)

@@ -95,6 +95,7 @@ typedef struct {
     uint8_t ready;
     uint8_t state_count, state_index, product_state_pending;
     uint8_t periodic_state_count, in_flight_state_count;
+    uint8_t response_state_count, response_count_valid, sync_state_count, sync_count_valid;
     uint8_t ever_ready;
     uint8_t bootstrap_stage;
     uint8_t response_pending;
@@ -122,6 +123,10 @@ int ABoxCloudService_Bootstrapping(const ABoxCloudService *service);
 /* The caller retains its response topic/payload until RESPONSE confirmation. */
 int ABoxCloudService_QueueResponse(ABoxCloudService *service,
                                    const char *request_id, int sync_state);
+/* Opt-in V4 plan: freeze the accepted round's count independently of later
+ * live Profile changes. The provider retains the corresponding immutable keys. */
+int ABoxCloudService_QueueSyncPlan(ABoxCloudService *service,
+                                   const char *request_id, uint8_t state_count);
 /* Retain a sync request while a previous response or correlated report owns
  * its slot. Next returns RESPONSE with this ID once that slot becomes free. */
 int ABoxCloudService_QueueSyncRequest(ABoxCloudService *service, const char *request_id);

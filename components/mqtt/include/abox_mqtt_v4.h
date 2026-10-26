@@ -13,7 +13,10 @@ typedef enum {
     ABOX_MQTT_COMMAND_QUERY,
     ABOX_MQTT_COMMAND_DISCRETE_ACTION,
     ABOX_MQTT_COMMAND_CONTINUOUS_SESSION,
-    ABOX_MQTT_COMMAND_SAFETY_STOP
+    ABOX_MQTT_COMMAND_SAFETY_STOP,
+    /* Descriptor-only projection of several parameter-specific categories.
+     * Never an executable operation category or a new wire category. */
+    ABOX_MQTT_COMMAND_PARAMETERIZED
 } ABoxMqttCommandClass;
 
 typedef struct {
@@ -57,6 +60,7 @@ typedef enum {
  * DeviceId and buffer ownership stay with the product. */
 int ABoxMqttV4_BuildTopic(char *output, size_t capacity, const char *device_id,
                           ABoxMqttV4Topic topic);
+int ABoxMqttV4_DeviceIdValid(const char *device_id);
 
 const ABoxMqttProfileDescriptor *ABoxMqttV4_FindProfile(
     const ABoxMqttV4Registry *registry, const char *name);

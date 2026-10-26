@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 2,
+  "protocolVersion": "4.0",
+  "profiles": [
+    {
+      "name": "fixture_actuator",
+      "currentVersion": "1.0",
+      "supportedMajors": [1],
+      "contract": "fixture://actuator",
+      "commands": [
+        {
+          "name": "actuator_control",
+          "introducedVersion": "1.0",
+          "semanticDescription": "Control the selected actuator channel.",
+          "classification": "PARAMETERIZED",
+          "applicableProfiles": ["fixture_actuator", "fixture_auxiliary"],
+          "operations": [
+            {
+              "operationMatcher": {"allOf": [
+                {"field": "data.params.channel", "equals": "primary"},
+                {"anyOf": [
+                  {"field": "data.params.action", "equals": "extend"},
+                  {"field": "data.params.action", "equals": "retract"}
+                ]}
+              ]},
+              "classification": "DISCRETE_ACTION",
+              "expiresAt": "required",
+              "maxValidity": 5000,
+              "params": {"type": "object", "required": ["channel", "action"], "properties": {
+                "channel": {"const": "primary"}, "action": {"enum": ["extend", "retract"]}
+              }},
+              "result": null,
+              "200Boundary": "controller accepted direction",
+              "rebootPolicy": "persistent_idempotency",
+              "errorCodes": [4003, 5001]
+            },
+            {
+              "operationMatcher": {"allOf": [
+                {"field": "data.params.channel", "equals": "primary"},
+                {"field": "data.params.action", "equals": "stop"}
+              ]},
+              "classification": "SAFETY_STOP",
+              "expiresAt": "forbidden",
+              "maxValidity": 0,
+              "params": {"type": "object", "required": ["channel", "action"], "properties": {
+                "channel": {"const": "primary"}, "action": {"const": "stop"}
+              }},
+              "result": null,
+              "200Boundary": "controller confirmed stopped",
+              "rebootPolicy": "repeatable_stop",
+              "errorCodes": [4003, 5001]
+            }
+          ]
+        },
+        {
+          "name": "query_actuator",
+          "introducedVersion": "1.0",
+          "semanticDescription": "Read the current actuator snapshot.",
+          "classification": "QUERY",
+          "applicableProfiles": ["fixture_actuator"],
+          "operations": [{
+            "operationMatcher": null,
+            "classification": "QUERY",
+            "expiresAt": "forbidden",
+            "maxValidity": 0,
+            "params": {"type": "null"},
+            "result": {"type": "object"},
+            "200Boundary": "snapshot captured",
+            "rebootPolicy": "repeatable_query",
+            "errorCodes": []
+          }]
+        }
+      ],
+      "reports": [
+        {
+          "name": "actuator_status",
+          "ownerProfile": "fixture_actuator",
+          "introducedVersion": "1.0",
+          "semanticDescription": "Complete actuator state.",
+          "reportType": "state",
+          "operationMatcher": {"field": "data.reportName", "equals": "actuator_status"},
+          "payload": {"type": "object", "properties": {"position": {"type": "number", "minimum": 0, "multipleOf": 0.1}}},
+          "fullState": true,
+          "instanceId": "forbidden",
+          "stream": "strict",
+          "requestCorrelation": true
+        },
+        {
+          "name": "actuator_position",
+          "ownerProfile": "fixture_actuator",
+          "introducedVersion": "1.0",
+          "semanticDescription": "Latest measured position.",
+          "reportType": "telemetry",
+          "operationMatcher": {"field": "data.reportName", "equals": "actuator_position"},
+          "payload": {"type": "object"},
+          "fullState": false,
+          "instanceId": "forbidden",
+          "stream": "none",
+          "requestCorrelation": false
+        }
+      ]
+    },
+    {
+      "name": "fixture_auxiliary",
+      "currentVersion": "1.1",
+      "supportedMajors": [1],
+      "contract": "fixture://auxiliary",
+      "commands": [{
+        "name": "actuator_control",
+        "introducedVersion": "1.0",
+        "semanticDescription": "Control the selected actuator channel.",
+        "classification": "DISCRETE_ACTION",
+        "applicableProfiles": ["fixture_actuator", "fixture_auxiliary"],
+        "operations": [{
+          "operationMatcher": {"allOf": [
+            {"field": "data.params.channel", "equals": "auxiliary"},
+            {"field": "data.params.action", "equals": "extend"}
+          ]},
+          "classification": "DISCRETE_ACTION",
+          "expiresAt": "required",
+          "maxValidity": 4000,
+          "params": {"type": "object"},
+          "result": null,
+          "200Boundary": "auxiliary accepted direction",
+          "rebootPolicy": "persistent_idempotency",
+          "errorCodes": [4003, 5001]
+        }]
+      }],
+      "reports": [{
+        "name": "auxiliary_status",
+        "ownerProfile": "fixture_auxiliary",
+        "introducedVersion": "1.0",
+        "semanticDescription": "Complete auxiliary state.",
+        "reportType": "state",
+        "operationMatcher": {"field": "data.reportName", "equals": "auxiliary_status"},
+        "payload": {"type": "object"},
+        "fullState": true,
+        "instanceId": "required",
+        "stream": "none",
+        "requestCorrelation": true
+      }]
+    }
+  ]
+}

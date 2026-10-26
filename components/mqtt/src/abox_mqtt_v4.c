@@ -30,6 +30,18 @@ uint16_t ABoxMqttV4_CheckExpiry(const ABoxClockSnapshot *clock, uint64_t expires
     return 200U;
 }
 
+int ABoxMqttV4_DeviceIdValid(const char *id)
+{
+    size_t i;
+    if (!id || !*id) return 0;
+    for (i = 0; id[i]; ++i) {
+        unsigned char c = (unsigned char)id[i];
+        if (i == 32U || !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '_' || c == '-')) return 0;
+    }
+    return 1;
+}
+
 int ABoxMqttV4_BuildTopic(char *output, size_t capacity, const char *device_id,
                           ABoxMqttV4Topic topic)
 {
@@ -41,7 +53,7 @@ int ABoxMqttV4_BuildTopic(char *output, size_t capacity, const char *device_id,
     size_t prefix_len, id_len, suffix_len;
     if (!output || !capacity) return 0;
     output[0] = '\0';
-    if (!device_id || !device_id[0] || (unsigned)topic >= ABOX_MQTT_V4_TOPIC_COUNT)
+    if (!ABoxMqttV4_DeviceIdValid(device_id) || (unsigned)topic >= ABOX_MQTT_V4_TOPIC_COUNT)
         return 0;
     suffix = suffixes[topic];
     prefix_len = sizeof(prefix) - 1U;
@@ -72,7 +84,7 @@ int ABoxMqttV4_RegistryValid(const ABoxMqttV4Registry *registry)
             const ABoxMqttCommandDescriptor *command = &profile->commands[j];
             if (!command->name || !command->name[0] || !command->profile ||
                 strcmp(command->profile, profile->name) != 0 ||
-                command->classification > ABOX_MQTT_COMMAND_SAFETY_STOP) return 0;
+                command->classification > ABOX_MQTT_COMMAND_PARAMETERIZED) return 0;
             for (k = 0; k < j; ++k)
                 if (strcmp(command->name, profile->commands[k].name) == 0) return 0;
         }

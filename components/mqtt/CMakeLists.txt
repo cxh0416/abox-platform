@@ -1,4 +1,4 @@
-foreach(module mqtt_v4 mqtt_ec800_rx mqtt_ec800 mqtt_tls mqtt_runtime mqtt_trial)
+foreach(module mqtt_v4 mqtt_ec800_rx mqtt_ec800 mqtt_tls mqtt_runtime mqtt_trial mqtt_backoff mqtt_request mqtt_idempotency mqtt_registry)
     add_library(abox_${module} STATIC src/abox_${module}.c)
     add_library(abox::${module} ALIAS abox_${module})
     target_include_directories(abox_${module} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -10,7 +10,10 @@ add_library(abox_mqtt_digest STATIC src/abox_mqtt_digest.c src/abox_mqtt_number.
 add_library(abox::mqtt_digest ALIAS abox_mqtt_digest)
 target_include_directories(abox_mqtt_digest PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(abox_mqtt_digest PUBLIC abox::mqtt_v4 abox::cjson)
-target_link_libraries(abox_mqtt_ec800 PUBLIC abox::ec800 abox::mqtt_ec800_rx)
+target_link_libraries(abox_mqtt_request PUBLIC abox::mqtt_digest)
+target_link_libraries(abox_mqtt_idempotency PUBLIC abox::mqtt_request)
+target_link_libraries(abox_mqtt_registry PUBLIC abox::mqtt_request)
+target_link_libraries(abox_mqtt_ec800 PUBLIC abox::ec800 abox::mqtt_ec800_rx abox::mqtt_backoff)
 target_sources(abox_mqtt_ec800 PRIVATE src/abox_mqtt_receipt.c
     src/abox_mqtt_ec800_bridge.c)
 target_link_libraries(abox_mqtt_tls PUBLIC abox::ec800_tls)

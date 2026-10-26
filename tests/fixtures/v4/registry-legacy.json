@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": "4.0",
+  "profile": {
+    "name": "fixture_query",
+    "currentVersion": "1.0",
+    "supportedMajors": [1],
+    "contract": "fixture://query",
+    "commands": [{
+      "name": "query_state",
+      "introducedVersion": "1.0",
+      "semanticDescription": "Read the current state.",
+      "classification": "QUERY",
+      "applicableProfiles": ["fixture_query"],
+      "operationMatcher": {"field": "data.command", "equals": "query_state"}
+    }],
+    "reports": [{
+      "name": "query_status",
+      "ownerProfile": "fixture_query",
+      "introducedVersion": "1.0",
+      "semanticDescription": "Current state.",
+      "reportType": "state",
+      "operationMatcher": {"field": "data.reportName", "equals": "query_status"}
+    }]
+  }
+}

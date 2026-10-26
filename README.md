@@ -52,6 +52,10 @@ abox_platform_attach_standard_port(Product_App HARDWARE stm32f105_ec800_v1)
 
 V4 Core 命令和已冻结 Profile 的唯一机器可校验登记入口是 [V4 Registry](docs/protocols/v4/registry.json)。运行 `python tools/validate_mqtt_v4.py` 可校验 Registry 和 Canonicalization/SHA-256 固定向量。
 
+V4 App 公共组件提供请求准入、参数级操作分类、持久幂等、EC800 UFS 双副本日志、Manifest/Report 编码、同步集合、重连退避及内部授时适配。接口、资源和旧存储格式迁移边界见[内部组件接入说明](docs/internal/mqtt_v4_components.md)。各产品通过显式接入采用这些组件，既有控制和存储格式保持产品合同。
+
+新操作表、C 描述符和 JSON Registry 可通过统一[主机校验入口](docs/internal/mqtt_v4_registry_validation.md)核对完整合同；旧 Schema 1 描述符继续兼容，并明确标注有限校验范围。
+
 当前 `Top_Flying_Wing`、`LockCtrlBoard_cheweishi`、`Meal_Delivery_Vehicle`、`Sweeper_VCU` 已接入公共 Boot；`Airport_vehicle`、`CageDumper` 仍为旧 Boot 网络下载架构，切换前必须先改造 App，并确认旧设备迁移方案。
 
 ## 构建与验证

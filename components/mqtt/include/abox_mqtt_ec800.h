@@ -3,6 +3,7 @@
 
 #include "abox_ec800_at.h"
 #include "abox_mqtt_ec800_rx.h"
+#include "abox_mqtt_backoff.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -79,6 +80,9 @@ typedef struct {
     uint8_t enabled, paused, security_ready, workspace_borrowed;
     uint8_t close_requested, initialized, registered, attached, pdp_active;
     uint8_t close_step;
+    ABoxMqttBackoff backoff;
+    uint32_t retry_wait_ms;
+    uint8_t v4_backoff, backoff_started;
 } ABoxMqttEc800;
 
 /* The caller owns every config string and buffer for the instance lifetime.
@@ -92,6 +96,9 @@ int ABoxMqttEc800_Configure(ABoxMqttEc800 *,
                              const ABoxMqttEc800Config *);
 void ABoxMqttEc800_Poll(ABoxMqttEc800 *, uint32_t now_ms);
 int ABoxMqttEc800_Start(ABoxMqttEc800 *, uint32_t now_ms);
+/* Opt in once after Init, before Start. Legacy consumers keep their frozen
+ * fixed interval; V4 consumers get the shared jitter/backoff policy. */
+int ABoxMqttEc800_UseV4Backoff(ABoxMqttEc800 *, uint32_t device_boot_seed);
 void ABoxMqttEc800_RequestReconnect(ABoxMqttEc800 *, uint32_t now_ms);
 void ABoxMqttEc800_SetSecurityReady(ABoxMqttEc800 *, uint8_t ready);
 /* Runtime gate: prevents delivery and publish while runtime coordinates stop.

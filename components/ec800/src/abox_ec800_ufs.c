@@ -42,6 +42,7 @@ void ABoxEc800Ufs_Poll(ABoxEc800Ufs *u, uint32_t now)
     if ((uint32_t)(now - u->started) >= u->timeout) { stop(u, ABOX_ASYNC_TIMEOUT); return; }
     status = u->port.poll(u->port.context, u->operation, &u->transferred);
     if (status == ABOX_ASYNC_PENDING) return;
+    if (status == ABOX_ASYNC_NOT_FOUND || status == ABOX_ASYNC_TRUNCATED) { u->status = status; return; }
     if (status != ABOX_ASYNC_OK) { stop(u, ABOX_ASYNC_ERROR); return; }
     u->status = (u->request.operation == ABOX_UFS_REMOVE ||
                  u->transferred == u->request.size) ? ABOX_ASYNC_OK : ABOX_ASYNC_ERROR;

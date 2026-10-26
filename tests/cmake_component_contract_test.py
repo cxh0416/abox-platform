@@ -47,6 +47,17 @@ def main() -> None:
     (ROOT / "build").mkdir(exist_ok=True)
     configure("generic-mqtt", "SCHEDULER BAREMETAL COMPONENTS core mqtt_v4", True,
               inspect_build=True)
+    configure("v4-components", "SCHEDULER BAREMETAL COMPONENTS core cjson mqtt_v4 mqtt_digest "
+              "mqtt_request mqtt_idempotency mqtt_registry ec800 ec800_ufs ec800_ufs_at boot_v2_common "
+              "ufs_journal mqtt_idem_ufs cloud_service cloud_v4", True,
+              extra="target_link_libraries(consumer abox::cloud_v4 abox::mqtt_idem_ufs abox::mqtt_registry)")
+    registry_path = (ROOT / "tests/fixtures/v4/registry-contract.json").as_posix()
+    configure("registry-testing-disabled", "SCHEDULER BAREMETAL COMPONENTS core mqtt_v4", False,
+              "BUILD_TESTING must be enabled",
+              extra=f'abox_platform_verify_registry(consumer REGISTRY "{registry_path}")')
+    configure("registry-missing-target", "SCHEDULER BAREMETAL COMPONENTS core mqtt_v4", False,
+              "host target and REGISTRY are required",
+              extra=f'abox_platform_verify_registry(missing REGISTRY "{registry_path}")')
     configure("hardware", "SCHEDULER BAREMETAL HARDWARE stm32f105_ec800_v1 COMPONENTS core", True)
     configure("standard-port", "SCHEDULER BAREMETAL HARDWARE stm32f105_ec800_v1 COMPONENTS core ec_power", True,
               extra="abox_platform_attach_standard_port(consumer HARDWARE stm32f105_ec800_v1)")

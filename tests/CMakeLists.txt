@@ -1,4 +1,34 @@
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_executable(abox_mqtt_registry_test abox_mqtt_registry_test.c)
+target_link_libraries(abox_mqtt_registry_test PRIVATE abox::mqtt_registry)
+add_test(NAME abox_mqtt_registry_test COMMAND abox_mqtt_registry_test)
+abox_platform_verify_registry(abox_mqtt_registry_test REGISTRY fixtures/v4/registry-contract.json)
+add_executable(abox_mqtt_registry_legacy_test abox_mqtt_registry_legacy_test.c)
+target_link_libraries(abox_mqtt_registry_legacy_test PRIVATE abox::mqtt_v4)
+add_test(NAME abox_mqtt_registry_legacy_test COMMAND abox_mqtt_registry_legacy_test)
+abox_platform_verify_registry(abox_mqtt_registry_legacy_test REGISTRY fixtures/v4/registry-legacy.json LEGACY)
+add_test(NAME abox_mqtt_registry_consistency COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_mqtt_registry.py
+    $<TARGET_FILE:abox_mqtt_registry_test> $<TARGET_FILE:abox_mqtt_registry_legacy_test>)
+add_test(NAME abox_mqtt_registry_vectors COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../tools/validate_mqtt_v4.py
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/v4/registry-contract.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/v4/registry-legacy.json)
+foreach(case IN ITEMS mqtt_request:mqtt_request cloud_v4:cloud_v4
+        mqtt_backoff:mqtt_ec800 time_client:cloud_v4 mqtt_idem_ufs:mqtt_idem_ufs ec800_ufs_at:ec800_ufs_at)
+    string(REPLACE ":" ";" pair "${case}")
+    list(GET pair 0 name)
+    list(GET pair 1 module)
+    add_executable(abox_${name}_test abox_${name}_test.c)
+    target_link_libraries(abox_${name}_test PRIVATE abox::${module})
+    add_test(NAME abox_${name}_test COMMAND abox_${name}_test)
+endforeach()
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(target IN ITEMS abox_mqtt_request abox_mqtt_idempotency abox_mqtt_backoff abox_mqtt_registry
+            abox_ec800_ufs_at abox_ufs_journal abox_cloud_v4 abox_mqtt_idem_ufs)
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+    endforeach()
+endif()
 add_test(NAME abox_mqtt_psk_files_test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_mqtt_psk_files.py)
 add_test(NAME abox_jlink_swd_test

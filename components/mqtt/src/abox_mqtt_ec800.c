@@ -12,6 +12,16 @@ enum { CFG_ECHO, CFG_RECV, CFG_VERSION, CFG_PDPCID, CFG_REG, CFG_ATTACH_QUERY, C
 
 static void change(ABoxMqttEc800 *m, ABoxMqttEc800State state, uint32_t now)
 {
+    if (m->v4_backoff) {
+        ABoxMqttBackoff_Poll(&m->backoff, now);
+        if (state == ABOX_MQTT_EC800_READY) ABoxMqttBackoff_Online(&m->backoff, now);
+        else if (m->state == ABOX_MQTT_EC800_READY) m->backoff.online = 0;
+        if (state == ABOX_MQTT_EC800_RETRY_WAIT && m->state != state && m->enabled && !m->paused) {
+            m->retry_wait_ms = m->backoff_started ? ABoxMqttBackoff_Failed(&m->backoff) :
+                ABoxMqttBackoff_Initial(&m->backoff);
+            m->backoff_started = 1;
+        }
+    }
     m->state = state;
     m->entered_ms = now;
     m->command_pending = 0U;
@@ -313,11 +323,21 @@ int ABoxMqttEc800_Start(ABoxMqttEc800 *m, uint32_t now)
         !m->security_ready ||
         m->paused || m->workspace_borrowed ||
         m->at->quarantined || m->state == ABOX_MQTT_EC800_BLOCKED) return 0;
+    if (m->v4_backoff && m->enabled && m->state != ABOX_MQTT_EC800_IDLE &&
+        m->state != ABOX_MQTT_EC800_PAUSED) return 1;
     m->enabled = 1U;
     m->step = CFG_ECHO;
     ++m->generation;
-    change(m, ABOX_MQTT_EC800_CONFIGURING, now);
+    change(m, m->v4_backoff && !m->backoff_started ?
+        ABOX_MQTT_EC800_RETRY_WAIT : ABOX_MQTT_EC800_CONFIGURING, now);
     return 1;
+}
+
+int ABoxMqttEc800_UseV4Backoff(ABoxMqttEc800 *m, uint32_t seed)
+{
+    if (!m || !m->initialized || m->enabled || m->state != ABOX_MQTT_EC800_IDLE) return 0;
+    ABoxMqttBackoff_Init(&m->backoff, seed);
+    m->v4_backoff = 1; m->backoff_started = 0; return 1;
 }
 
 static void configure(ABoxMqttEc800 *m, uint32_t now)
@@ -493,6 +513,7 @@ static void closing(ABoxMqttEc800 *m, uint32_t now)
 void ABoxMqttEc800_Poll(ABoxMqttEc800 *m, uint32_t now)
 {
     if (!m || !m->initialized) return;
+    if (m->v4_backoff) ABoxMqttBackoff_Poll(&m->backoff, now);
     ABoxMqttEc800Rx_Poll(&m->rx, now);
     if (m->at->quarantined || ABoxMqttEc800Rx_IsLocked(&m->rx)) {
         /* The publish ACK wait can outlive its AT command (SEND OK). Settle
@@ -538,7 +559,7 @@ void ABoxMqttEc800_Poll(ABoxMqttEc800 *m, uint32_t now)
         if (m->paused) {
             change(m, ABOX_MQTT_EC800_PAUSED, now);
         } else if (m->enabled && m->security_ready &&
-            (uint32_t)(now - m->entered_ms) >= m->config.retry_delay_ms) {
+            (uint32_t)(now - m->entered_ms) >= (m->v4_backoff ? m->retry_wait_ms : m->config.retry_delay_ms)) {
             ++m->generation;
             m->step = CFG_ECHO;
             change(m, ABOX_MQTT_EC800_CONFIGURING, now);
@@ -624,7 +645,7 @@ void ABoxMqttEc800_OnModemReset(ABoxMqttEc800 *m, uint32_t now)
     m->step = CFG_ECHO;
     if (m->enabled && !m->paused && m->security_ready &&
         !m->workspace_borrowed && !m->at->quarantined)
-        change(m, ABOX_MQTT_EC800_CONFIGURING, now);
+        change(m, m->v4_backoff ? ABOX_MQTT_EC800_RETRY_WAIT : ABOX_MQTT_EC800_CONFIGURING, now);
     else change(m, m->paused ? ABOX_MQTT_EC800_PAUSED :
                 ABOX_MQTT_EC800_IDLE, now);
 }

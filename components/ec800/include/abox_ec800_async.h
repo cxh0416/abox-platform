@@ -11,7 +11,9 @@ extern "C" {
 typedef enum {
     ABOX_ASYNC_IDLE = 0, ABOX_ASYNC_PENDING, ABOX_ASYNC_OK,
     ABOX_ASYNC_ERROR, ABOX_ASYNC_TIMEOUT, ABOX_ASYNC_CANCELLED,
-    ABOX_ASYNC_QUARANTINED
+    ABOX_ASYNC_QUARANTINED,
+    ABOX_ASYNC_NOT_FOUND, /* Exact file absence, never generic open/I/O failure. */
+    ABOX_ASYNC_TRUNCATED /* Known EOF, file handle closed; not an I/O timeout. */
 } ABoxAsyncStatus;
 typedef struct {
     void *context;

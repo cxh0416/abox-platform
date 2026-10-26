@@ -12,3 +12,13 @@ add_library(abox_app_service STATIC src/abox_app_service.c)
 add_library(abox::app_service ALIAS abox_app_service)
 target_include_directories(abox_app_service PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(abox_app_service PUBLIC abox::ec800 abox::mqtt_ec800_rx abox::ec_power abox::boot_v2_app)
+
+add_library(abox_cloud_v4 STATIC src/abox_cloud_v4.c src/abox_time_client.c)
+add_library(abox::cloud_v4 ALIAS abox_cloud_v4)
+target_include_directories(abox_cloud_v4 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(abox_cloud_v4 PUBLIC abox::cloud_service abox::mqtt_request)
+
+add_library(abox_mqtt_idem_ufs STATIC src/abox_mqtt_idem_ufs.c)
+add_library(abox::mqtt_idem_ufs ALIAS abox_mqtt_idem_ufs)
+target_include_directories(abox_mqtt_idem_ufs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(abox_mqtt_idem_ufs PUBLIC abox::mqtt_idempotency abox::ufs_journal)

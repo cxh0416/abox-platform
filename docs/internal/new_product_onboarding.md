@@ -16,7 +16,7 @@ OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，
 
 `ABoxCloudService` 统一 Manifest → Heartbeat → State、响应、sync_state、事件、周期调度及精确 operation/generation 回执。`ABoxCloudServicePort` 在 Flash 中注册报文 provider、transport 和产品完成回调。响应先确认，再发送同 requestId 状态；断连和旧回执不能完成新 operation。产品动态遥测仍由产品提供。
 
-`ABoxCloudRoutes` 注册公共 Topic 路由；产品继续使用各自 Profile descriptor 与 handler。内部 Topic/报文由产品协议适配器处理。公共内部响应 encoder 保持既有报文及响应码。队列使用调用方静态 records、stride 和 capacity；不分配 heap，送餐车双锁持久化幂等仍在产品。底盘、清扫车已替换旧 bootstrap/TX 跟踪状态，不能并存第二份缓存。可选 deferred sync storage 由调用方提供至少 65 字节。
+`ABoxCloudRoutes` 注册公共 Topic 路由；产品继续使用各自 Profile descriptor 与 handler。内部 Topic/报文由产品协议适配器处理。公共内部响应 encoder 保持既有报文及响应码。队列使用调用方静态 records、stride 和 capacity；不分配 heap。新增 V4 请求、参数级分类、持久幂等/UFS、能力/报告编码与授时适配见[公共组件接入](mqtt_v4_components.md)；既有送餐/清扫磁盘 codec 和产品控制流程须显式迁移。底盘、清扫车已替换旧 bootstrap/TX 跟踪状态，不能并存第二份缓存。可选 deferred sync storage 由调用方提供至少 65 字节。
 
 `ABoxMaintenanceService` 组合 trial、executor、发布证明和 ConfigStore。产品提供安全准入、候选校验、证明类型、配置快照及写入回读 callback。Commit 检查 session、阶段及期限；候选保存失败只尝试一次稳定快照恢复，恢复失败保持明确失败/占用，不能报告提交成功。Config V5/V3/V2 的字节布局分别由三产品负责。
 

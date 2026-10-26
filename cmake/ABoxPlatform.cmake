@@ -1,3 +1,31 @@
+function(abox_platform_verify_registry target)
+    cmake_parse_arguments(ABOX_REGISTRY "LEGACY" "REGISTRY" "" ${ARGN})
+    if(ABOX_REGISTRY_UNPARSED_ARGUMENTS OR ABOX_REGISTRY_KEYWORDS_MISSING_VALUES OR
+            NOT ABOX_REGISTRY_REGISTRY OR NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_verify_registry: host target and REGISTRY are required")
+    endif()
+    get_target_property(registry_target_type ${target} TYPE)
+    if(CMAKE_CROSSCOMPILING OR NOT registry_target_type STREQUAL "EXECUTABLE")
+        message(FATAL_ERROR "abox_platform_verify_registry: a host executable is required")
+    endif()
+    if(NOT BUILD_TESTING)
+        message(FATAL_ERROR "abox_platform_verify_registry: BUILD_TESTING must be enabled")
+    endif()
+    get_filename_component(registry_json "${ABOX_REGISTRY_REGISTRY}" ABSOLUTE
+        BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    if(NOT EXISTS "${registry_json}")
+        message(FATAL_ERROR "abox_platform_verify_registry: Registry file does not exist: ${registry_json}")
+    endif()
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    set(registry_mode --require-complete)
+    if(ABOX_REGISTRY_LEGACY)
+        set(registry_mode)
+    endif()
+    add_test(NAME ${target}_registry COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../tools/verify_profile_descriptor.py"
+        "${registry_json}" "$<TARGET_FILE:${target}>" ${registry_mode})
+endfunction()
+
 function(abox_platform_attach_components target)
     if(NOT TARGET ${target})
         message(FATAL_ERROR "abox_platform_attach_components: target '${target}' does not exist")
@@ -26,7 +54,7 @@ function(abox_platform_attach_components target)
         if(component STREQUAL "boot" OR component STREQUAL "ota")
             message(FATAL_ERROR "abox_platform_attach_components: legacy Boot/OTA must be attached explicitly")
         endif()
-        if(NOT component MATCHES "^(core|board_io|cjson|ec_power|ec800|ec800_ufs|ec800_command_port|ec800_tls|mqtt_tls|mqtt_runtime|mqtt_trial|mqtt_v4|mqtt_ec800_rx|mqtt_ec800|enrollment|enrollment_ec800_http|boot_v2_common|boot_v2_app|https_ufs_downloader|cloud_service|log_ring|maintenance_service|app_service)$")
+        if(NOT component MATCHES "^(core|board_io|cjson|ec_power|ec800|ec800_ufs|ec800_command_port|ec800_tls|mqtt_tls|mqtt_runtime|mqtt_trial|mqtt_v4|mqtt_ec800_rx|mqtt_ec800|enrollment|enrollment_ec800_http|boot_v2_common|boot_v2_app|https_ufs_downloader|cloud_service|log_ring|maintenance_service|app_service|mqtt_digest|mqtt_request|mqtt_idempotency|mqtt_backoff|mqtt_registry|ec800_ufs_at|ufs_journal|cloud_v4|mqtt_idem_ufs)$")
             message(FATAL_ERROR "abox_platform_attach_components: unknown component '${component}'")
         endif()
         if(NOT TARGET abox::${component})
@@ -40,6 +68,12 @@ function(abox_platform_attach_components target)
             "mqtt_runtime:ec800_command_port" "mqtt_ec800:ec800"
             "mqtt_ec800:mqtt_ec800_rx" "enrollment:cjson"
             "cloud_service:cjson"
+            "mqtt_digest:mqtt_v4" "mqtt_digest:cjson" "mqtt_request:mqtt_digest"
+            "mqtt_idempotency:mqtt_request" "ec800_ufs_at:ec800" "ec800_ufs_at:ec800_ufs"
+            "mqtt_registry:mqtt_request"
+            "ufs_journal:ec800_ufs" "ufs_journal:boot_v2_common"
+            "cloud_v4:cloud_service" "cloud_v4:mqtt_request"
+            "mqtt_idem_ufs:mqtt_idempotency" "mqtt_idem_ufs:ufs_journal"
             "enrollment_ec800_http:ec800" "boot_v2_common:core"
             "boot_v2_app:boot_v2_common" "boot_v2_app:https_ufs_downloader")
         string(REPLACE ":" ";" pair "${requirement}")
