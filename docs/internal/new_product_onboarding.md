@@ -40,6 +40,22 @@ OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，
 
 公共改变只测一次；产品测 Profile、codec、证明、安全 callback 和幂等差异。三产品在整合点运行 Release 和资源检查。新修改/失败只重跑受影响部分，不重复擦配置、入网或踢 Broker。
 
+### V4 统一预检与空板基线
+
+上板前运行 `tools/test_v4_product.ps1 -ProductRoot <产品> -ServiceRoot <服务端源码> -Product <固定产品标识> -PacketTest <报文测试程序> -IdentityTest <入网测试程序>`。入口复用平台、产品的 CMake/CTest，并将产品测试程序 `--describe` 导出的实际生产编码报文和入网身份交给服务端现有硬件合同、Topic 订阅及协议适配器检查。导出至少包含 Manifest、Heartbeat、完整 State 的 Topic、QoS、retain 和 payload，以及 `hardwareContract`、`tlsProfileId`、`requirePsk`。预检只读服务端源码的默认产品注册表，不连接生产数据库或 Broker；不能替代部署版本和真实收发检查。
+
+无原固件保留要求的测试板，首次验收必须整片擦除 MCU Flash，不能把保留配置的升级场景当作空板测试。STM32F105RC 统一使用：
+
+```powershell
+python tools/factory_flash_stm32f105.py --serial <探针序列号> --uid <三个UID字的24位十六进制> --dll <JLink_x64.dll> --app <App.bin> --version <App版本>
+```
+
+入口先验证冻结 Boot、App 边界/向量/版本和 MCU 身份，再调用整片擦除，逐块验证全部 256 KiB 为 `FF`；烧录后读回比较 Boot/App，并在首次启动前验证剩余 Flash、Boot State A/B 和配置页仍为空。失败不继续编程或启动。该流程不备份旧固件，不能用于要求保留现场数据的设备。
+
+MCU 全擦不包含 EC800 UFS 和服务端 UID 登记。验收需明确这两个边界：UFS 双副本日志的损坏、重启恢复由公共回归和独立持久化场景验证；既有 UID 的重新入网必须通过真实新申请和审批，不得直接删除服务端记录或绕过审批。只有实际清理并验证过的存储，才可声明为空。
+
+空板实测按顺序覆盖：无有效配置时禁止默认 MQTT → 新入网申请/人工审批 → 首次 MQTT 连接、订阅、发布证明 → 凭据保存并回读 → 服务端实际接收 Manifest/心跳/状态 → 紧接着执行正式 OTA → 独立查询目标版本及 Boot `CONFIRMED` → 重启后凭据、幂等日志恢复。入网后首次 OTA 前不插入额外复位，以覆盖共用 TLS 上下文从入网切换到下载。保留配置的 OTA/重启属于后续独立场景。空板流程不发送业务动作命令；运动与断电恢复需要各自具备条件时另行验收。
+
 主机、ARM、标准板与实车证据分开记录。标准板没有整板电源控制，不能声称冷上电/pre-App 问题已验收；Broker kick 不能代替完整蜂窝断网，ready 状态不能代替持续 OTA 下载与恢复。COM3 为 485 业务接口。正式打包不表示现场 OTA、机械运动或反馈已验收。
 
 此前阶段设计和记录见 [归档](history/2026-09-30-new-product-onboarding-pre-close.md)；原始证据与既有哈希保持不变。
