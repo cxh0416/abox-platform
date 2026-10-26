@@ -80,5 +80,21 @@ int main(void)
     ABoxEnrollmentService_AfterModemReset(&service);
     assert(!service.enrollment.have_request);
     assert(service.enrollment.state == ABOX_ENROLLMENT_WAITING);
+    /* A delayed approval may outlive a failed HTTP cleanup. Network readiness
+     * can be false; still request physical recovery without losing binding. */
+    service.enrollment.have_request = 1U;
+    strcpy(request_id, "approved-request");
+    strcpy(poll_token, "approved-token");
+    service.http.blocked = 1U;
+    ABoxEnrollmentService_Poll(&service);
+    assert(at.quarantined && service.http.blocked);
+    uint32_t generation = at.generation;
+    ABoxEnrollmentService_Poll(&service);
+    assert(at.generation == generation); /* Request recovery only once. */
+    ABoxEc800At_OnModemReset(&at);
+    ABoxEnrollmentService_AfterModemReset(&service);
+    assert(!at.quarantined && !service.http.blocked);
+    assert(service.enrollment.have_request && !strcmp(request_id, "approved-request"));
+    assert(!strcmp(poll_token, "approved-token"));
     return 0;
 }

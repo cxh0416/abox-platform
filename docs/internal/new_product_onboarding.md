@@ -54,6 +54,8 @@ python tools/factory_flash_stm32f105.py --serial <探针序列号> --uid <三个
 
 MCU 全擦不包含 EC800 UFS 和服务端 UID 登记。验收需明确这两个边界：UFS 双副本日志的损坏、重启恢复由公共回归和独立持久化场景验证；既有 UID 的重新入网必须通过真实新申请和审批，不得直接删除服务端记录或绕过审批。只有实际清理并验证过的存储，才可声明为空。
 
+人工审批等待期间也要覆盖 HTTP 清理失败：客户端进入 blocked 后，公共入网服务必须向 AT core 发出隔离信号，由已有模组恢复机制在准入允许时执行物理恢复；不能只在 `Http_Ready` 前永久等待。模组恢复后重新校验证书文件，并保留既有 requestId/pollToken 继续同一申请，不重新申请或复用其他审批。首次 MQTT 成功保存凭据后，再验证不复位 MCU 直接 OTA。
+
 空板实测按顺序覆盖：无有效配置时禁止默认 MQTT → 新入网申请/人工审批 → 首次 MQTT 连接、订阅、发布证明 → 凭据保存并回读 → 服务端实际接收 Manifest/心跳/状态 → 紧接着执行正式 OTA → 独立查询目标版本及 Boot `CONFIRMED` → 重启后凭据、幂等日志恢复。入网后首次 OTA 前不插入额外复位，以覆盖共用 TLS 上下文从入网切换到下载。保留配置的 OTA/重启属于后续独立场景。空板流程不发送业务动作命令；运动与断电恢复需要各自具备条件时另行验收。
 
 入网与 OTA 共用 SSL context 1，但策略不同：入网显式启用证书有效期检查；现有 OTA 保留模组的有效期容错策略，下载器必须显式设置 `ignorelocaltime=1`、`ignorecertitem=1` 和完整 cipher 集，不能依赖重启后的默认值。`ignorecertitem=1` 只忽略有效期过期，CA、签名和其他证书项不因此关闭（[移远 SSL 参数说明](https://www.quectel.com/content/uploads/2024/02/Quectel_EC200UEG91xU_Series_SSL_Application_Note_V1.2.pdf)）。OTA 不以证书有效期作为拒绝条件这一限制仍然存在；该策略不能解释为所有证书校验均已通过。

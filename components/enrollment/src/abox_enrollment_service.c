@@ -82,6 +82,13 @@ void ABoxEnrollmentService_Poll(ABoxEnrollmentService *s)
 {
     int result;
     if (!s || !s->initialized) return;
+    /* Unproven HTTP cleanup/CA IO cannot be retried on the same wire.
+     * Signal the existing owner recovery instead of waiting forever behind
+     * Http_Ready. Physical reset clears the block and preserves request ID. */
+    if (s->http.blocked) {
+        if (!s->http.at->quarantined) ABoxEc800At_Quarantine(s->http.at);
+        return;
+    }
     if (ABoxEnrollment_State(&s->enrollment) == ABOX_ENROLLMENT_TRIAL) {
         result = s->port.trial_result(s->port.user);
         if (result >= 0)
