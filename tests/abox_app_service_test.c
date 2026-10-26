@@ -75,7 +75,7 @@ int main(void)
     assert(strcmp(trace, "PRGADOBEUTC") == 0); /* recovery cooldown */
     used=0; power_done=1;
     ABoxAppService_Poll(&service, 6U);
-    assert(strcmp(trace, "PFSRGADOBEUTC") == 0); /* verified cycle resets locked parsing once */
+    assert(strcmp(trace, "PSFRGADOBEUTC") == 0); /* RX rearm precedes the reset notification */
     assert(!service.reset_pending);
     used=0; blocked=0; runtime_ready=0;
     ABoxAppService_Poll(&service, 7U);

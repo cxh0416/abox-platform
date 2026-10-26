@@ -6,6 +6,7 @@ static uint32_t now;
 static unsigned attempts, failures, clouds, otas, ats, completed[2], resets, unavailable;
 static ABoxEc800Rx rx;
 static int restart_interrupt;
+static int workspace_borrowed;
 void EC_Power_Task(void) { }
 int EC_Power_IsOnDone(void) { return 1; }
 void EC_Power_StartRestartSequence(void) { assert(0); }
@@ -23,6 +24,8 @@ static int restart_rx(void *u)
     return 1;
 }
 static void cloud(void *u, uint32_t t) { (void)u; (void)t; ++clouds; }
+static void leased_ota(void *u, uint32_t t)
+{ (void)u; (void)t; if (!workspace_borrowed) ABoxBootV2App_Task(); }
 static void ready(void *u, int value, uint32_t t)
 { (void)u; (void)t; if (!value) ++unavailable; }
 static void done(ABoxEc800Result r, void *u)
@@ -77,6 +80,32 @@ int main(void)
         assert(service.rx_failed && rx.restart_requested && clouds==old_clouds);
         now+=128; ABoxAppService_Poll(&service,now);
         assert(!service.rx_failed && clouds==old_clouds+1 && ats==1);
+
+        /* Physical reset evidence survives failed RX rearm. No owner receives
+         * RDY, and no AT/OTA/cloud work runs, until DMA really starts. */
+        ABoxEc800At_Quarantine(&at);
+        service.reset_pending=1;
+        failures=1;
+        unsigned old_resets=resets, old_otas=otas, old_ats=ats;
+        old_clouds=clouds;
+        ABoxAppService_Poll(&service,now);
+        assert(service.reset_pending && service.rx_failed && at.quarantined);
+        assert(resets==old_resets && clouds==old_clouds && otas==old_otas && ats==old_ats);
+        for (unsigned i=0;i<127;++i) { ++now; ABoxAppService_Poll(&service,now); }
+        assert(service.reset_pending && resets==old_resets);
+        ++now; ABoxAppService_Poll(&service,now);
+        assert(!service.reset_pending && !service.rx_failed && !at.quarantined);
+        assert(resets==old_resets+1 && clouds==old_clouds+1);
+        ABoxAppService_Poll(&service,++now);
+        assert(resets==old_resets+1);
+
+        /* Product workspace ownership must not be bypassed by the scheduler. */
+        port.ota=leased_ota; workspace_borrowed=1; old_otas=otas; old_clouds=clouds;
+        ABoxAppService_Poll(&service,++now);
+        assert(otas==old_otas && clouds==old_clouds+1);
+        workspace_borrowed=0;
+        ABoxAppService_Poll(&service,++now);
+        assert(otas==old_otas+1);
     }
     return 0;
 }

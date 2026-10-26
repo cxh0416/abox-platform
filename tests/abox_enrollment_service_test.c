@@ -1,10 +1,33 @@
 #include "abox_enrollment_service.h"
+#include "abox_app_service.h"
 #include <assert.h>
 #include <string.h>
 
 static int needs;
 static int result = -1;
 static unsigned pauses;
+static int power_done = 1, rx_failure;
+static unsigned resets;
+static ABoxEnrollmentService *enrolling;
+static ABoxEc800Rx rx;
+void EC_Power_Task(void) { }
+int EC_Power_IsOnDone(void) { return power_done; }
+void EC_Power_StartRestartSequence(void) { ++resets; power_done = 0; }
+void ABoxBootV2App_Task(void) { }
+int ABoxBootV2App_IsBusy(void) { return 0; }
+static int restart_rx(void *u)
+{ (void)u; if (rx_failure) return 0; ABoxEc800Rx_AfterRestart(&rx); return 1; }
+static int idle(void *u) { (void)u; return 0; }
+static void cloud(void *u, uint32_t t) { (void)u; (void)t; }
+static void enroll_poll(void *u, uint32_t t)
+{ (void)u; (void)t; ABoxEnrollmentService_Poll(enrolling); }
+static void network_event(void *u, ABoxAppServiceEvent e) { (void)u; (void)e; }
+static void modem_event(ABoxEc800Event e, const uint8_t *d, uint16_t n, void *u)
+{
+    (void)u;
+    if (e == ABOX_EC800_EVENT_LINE && n == 3 && !memcmp(d, "RDY", 3))
+        ABoxEnrollmentService_AfterModemReset(enrolling);
+}
 static uint32_t now_ms(void *user) { (void)user; return 100U; }
 static int network_ready(void *user) { (void)user; return 0; }
 static int needs_enrollment(void *user) { (void)user; return needs; }
@@ -91,8 +114,27 @@ int main(void)
     uint32_t generation = at.generation;
     ABoxEnrollmentService_Poll(&service);
     assert(at.generation == generation); /* Request recovery only once. */
-    ABoxEc800At_OnModemReset(&at);
-    ABoxEnrollmentService_AfterModemReset(&service);
+    /* Drive the real shared owner, rather than manually clearing quarantine.
+     * The same approved binding must survive both HTTP and UART failures. */
+    ABoxAppService app;
+    ABoxEc800Recovery recovery;
+    uint8_t dma[ABOX_EC800_RX_DMA_MIN], ring[ABOX_EC800_RX_RING_MIN];
+    ABoxAppServicePort app_port = {.restart_rx=restart_rx, .cloud=cloud,
+        .enrollment=enroll_poll, .event=network_event, .recovery=&recovery,
+        .transport_error=idle, .maintenance_busy=idle};
+    enrolling=&service;
+    assert(ABoxEc800At_Register(&at, 21, modem_event, NULL));
+    assert(ABoxEc800Rx_Init(&rx, dma, sizeof(dma), ring, sizeof(ring)));
+    ABoxEc800Recovery_Init(&recovery, 30000);
+    assert(ABoxAppService_Init(&app, &at, &rx, &app_port));
+    ABoxAppService_Poll(&app, 0);
+    assert(resets == 1 && app.reset_pending && at.quarantined);
+    power_done=1; rx_failure=1;
+    ABoxAppService_Poll(&app, 1);
+    assert(service.http.blocked && app.reset_pending && at.quarantined);
+    rx_failure=0;
+    ABoxAppService_Poll(&app, 129);
+    assert(!app.reset_pending && resets == 1);
     assert(!at.quarantined && !service.http.blocked);
     assert(service.enrollment.have_request && !strcmp(request_id, "approved-request"));
     assert(!strcmp(poll_token, "approved-token"));

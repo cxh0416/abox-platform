@@ -34,6 +34,9 @@ typedef struct {
     void (*restarted)(void *, uint32_t);
     uint8_t transport_first;
     uint8_t recovery_after_cloud;
+    /* Optional OTA adapter for a product-owned workspace lease. When omitted,
+     * the standard Boot V2 task is polled. Never call both from the product. */
+    void (*ota)(void *, uint32_t);
 } ABoxAppServicePort;
 typedef struct {
     ABoxEc800At *at;

@@ -1,5 +1,7 @@
 # 标准 STM32F105 / EC800 产品接入（内部）
 
+内部资料，不作为业务对接协议对外交付。
+
 公共 MQTT V4 和冻结 Boot ABI 保持原合同。产品显式声明身份、Profile、业务 handler、状态 provider、Config codec、版本和安全策略。业务协议不进入平台公共服务。
 
 ## 构建与运行入口
@@ -7,6 +9,8 @@
 App CMake 使用 `abox_platform_attach_standard_app(target PRODUCT_CONFIG_DIR dir SCHEDULER BAREMETAL|FREERTOS)`。标准硬件细节留在 `targets/stm32f105_ec800_v1`，产品保留 CubeMX 启动、特殊外设及执行器。
 
 运行时显式初始化 AT、RX ring、MQTT bridge/runtime、Enrollment、维护、Cloud 和 Boot V2 App，然后调用 `ABoxAppService_Init`。裸机主循环调用 `ABoxAppService_Poll`；FreeRTOS 由唯一通信 owner 调用。中断只投递 RX 或事件，其他任务不能直接轮询 AT。
+
+V4 新接入必须复用这个运行入口，不得在产品主循环另写 AT/OTA/入网调度、RX 恢复或模组重启状态机。产品仅提供回调、硬件端口和业务准入。物理复位完成后，公共入口等待 `restart_rx` 成功才通知 AT 和各 owner；UART 失败保留复位证据并按已有间隔重试，普通 UART 重启不冒充物理复位。共享工作区的产品通过可选 `ota` 回调接入既有借用保护；未提供时沿用标准 Boot V2 Task，不得在主循环再调用第二次。顶飞翼的 `wing_app_service.c` 是裸机薄适配示例，清扫车的 `cloud_service.c` 是通信 owner 示例。
 
 OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，不要求 MQTT 已联网。产品必须检查基础通信初始化和 OTA 绑定结果。OTA 初始化失败可局部禁用；基础通信初始化失败则停止通信服务，MCU 本地安全任务继续运行。`ABoxBootV2App_IsInitialized` 只表示本次启动绑定成功，不表示 CA/UFS 或网络就绪；初始化前和失败后的 Task、Start、查询及迟到回调均安全返回。每次 Init 尝试都会失效先前的就绪状态，产品在绑定失败前可用 `Init(NULL, NULL)` 显式失效；Init 只用于启动或已排空的空闲会话，不得用于取消活动下载。
 
@@ -42,7 +46,9 @@ OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，
 
 ### V4 统一预检与空板基线
 
-上板前运行 `tools/test_v4_product.ps1 -ProductRoot <产品> -ServiceRoot <服务端源码> -Product <固定产品标识> -PacketTest <报文测试程序> -IdentityTest <入网测试程序>`。入口复用平台、产品的 CMake/CTest，并将产品测试程序 `--describe` 导出的实际生产编码报文和入网身份交给服务端现有硬件合同、Topic 订阅及协议适配器检查。导出至少包含 Manifest、Heartbeat、完整 State 的 Topic、QoS、retain 和 payload，以及 `hardwareContract`、`tlsProfileId`、`requirePsk`。预检只读服务端源码的默认产品注册表，不连接生产数据库或 Broker；不能替代部署版本和真实收发检查。
+上板前运行 `tools/test_v4_product.ps1 -ProductRoot <产品> -ServiceRoot <服务端源码> -Product <固定产品标识> -PacketTest <报文测试程序> -IdentityTest <入网测试程序> -LifecycleTest <运行入口测试程序>`。入口复用平台、产品的 CMake/CTest，并将产品测试程序 `--describe` 导出的实际生产编码报文和入网身份交给服务端现有硬件合同、Topic 订阅及协议适配器检查。导出至少包含 Manifest、Heartbeat、完整 State 的 Topic、QoS、retain 和 payload，以及 `hardwareContract`、`tlsProfileId`、`requirePsk`。预检只读服务端源码的默认产品注册表，不连接生产数据库或 Broker；不能替代部署版本和真实收发检查。
+
+`LifecycleTest` 必须编译实际产品适配与公共 `ABoxAppService`，覆盖 UART 停止/启动失败、物理复位后恢复、普通 UART 故障、业务/OTA 工作区占用，以及产品声明的轮询顺序。不得以一个手写的“已接入”标记代替运行测试。公共回归负责 HTTP blocked → owner 恢复 → 同一请求继续，以及分块 UFS 累计长度和 OTA TLS 策略；产品测试负责真实回调绑定。这样新产品接入不会只通过报文检查就上板。
 
 无原固件保留要求的测试板，首次验收必须整片擦除 MCU Flash，不能把保留配置的升级场景当作空板测试。STM32F105RC 统一使用：
 

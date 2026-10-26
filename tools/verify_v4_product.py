@@ -68,6 +68,8 @@ def main(argv=None):
     parser.add_argument("--service-root", type=Path, required=True)
     parser.add_argument("--packet-test", type=Path, required=True)
     parser.add_argument("--identity-test", type=Path, required=True)
+    parser.add_argument("--lifecycle-test", type=Path, required=True,
+                        help="host test linking the production product adapter and shared AppService")
     args = parser.parse_args(argv)
     try:
         service = args.service_root.resolve()
@@ -79,6 +81,7 @@ def main(argv=None):
         from paho.mqtt.client import topic_matches_sub
         # Explicit source defaults: never load a production products.json.
         products = load_products(service / "deploy/ota-products.json.example")
+        subprocess.run([str(args.lifecycle_test.resolve())], check=True, timeout=30)
         protocol = verify(args.product, describe(args.packet_test), describe(args.identity_test),
                           products, HARDWARE_CONTRACTS, adapter_for, topic_matches_sub)
         print(f"PASS compiled product/service V4 contract: {args.product} ({protocol})")

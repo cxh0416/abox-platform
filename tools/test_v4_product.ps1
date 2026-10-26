@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory)] [string] $Product,
     [Parameter(Mandatory)] [string] $PacketTest,
     [Parameter(Mandatory)] [string] $IdentityTest,
+    [Parameter(Mandatory)] [string] $LifecycleTest,
     [string] $Compiler = 'D:/MinGW/bin/gcc.exe'
 )
 $ErrorActionPreference = 'Stop'
@@ -22,5 +23,6 @@ foreach ($source in @($platform, (Join-Path $productPath 'tests'))) {
 }
 & python (Join-Path $PSScriptRoot 'verify_v4_product.py') --product $Product --service-root $servicePath `
     --packet-test (Join-Path $productPath "build/host/$PacketTest") `
-    --identity-test (Join-Path $productPath "build/host/$IdentityTest")
+    --identity-test (Join-Path $productPath "build/host/$IdentityTest") `
+    --lifecycle-test (Join-Path $productPath "build/host/$LifecycleTest")
 if ($LASTEXITCODE -ne 0) { throw 'Compiled product/service V4 contract failed' }

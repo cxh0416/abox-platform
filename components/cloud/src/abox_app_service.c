@@ -50,13 +50,16 @@ void ABoxAppService_Poll(ABoxAppService *service, uint32_t now)
         /* A locked MQTT/raw parser can swallow RDY. The completed rail cycle
          * is independent reset evidence; discard old RX and notify all owners
          * so both parsers and upper state machines converge without re-init. */
-        service->reset_pending = 0U;
         if (service->rx) {
-            service->rx_starting = 1U;
-            service->rx_failed = 0U;
-            ABoxEc800Rx_RequestRestart(service->rx);
+            if (!service->rx_starting) {
+                service->rx_starting = 1U;
+                service->rx_failed = 0U;
+                ABoxEc800Rx_RequestRestart(service->rx);
+            }
+        } else {
+            service->reset_pending = 0U;
+            ABoxEc800At_OnModemReset(service->at);
         }
-        ABoxEc800At_OnModemReset(service->at);
     }
     if (service->rx) {
         ABoxEc800At_SetRxOverflowCount(service->at, ABoxEc800Rx_OverflowCount(service->rx));
@@ -70,10 +73,16 @@ void ABoxAppService_Poll(ABoxAppService *service, uint32_t now)
         }
         if (service->rx_failed) {
             if ((int16_t)((uint16_t)(now >> 4) - service->rx_retry_at) >= 0) {
-                service->rx_starting = 0U;
-                if (p->restart_rx(p->context) && !service->rx->restart_requested)
+                if (p->restart_rx(p->context) && !service->rx->restart_requested) {
                     service->rx_failed = 0U;
-                else {
+                    service->rx_starting = 0U;
+                    /* A completed rail cycle is not usable until RX is armed.
+                     * Keep the reset evidence across local UART retries. */
+                    if (service->reset_pending && EC_Power_IsOnDone()) {
+                        service->reset_pending = 0U;
+                        ABoxEc800At_OnModemReset(service->at);
+                    }
+                } else {
                     ABoxEc800At_AbortAll(service->at, ABOX_EC800_RESULT_ERROR);
                     service->rx_retry_at = (uint16_t)((now >> 4) + 8U);
                 }
@@ -91,7 +100,8 @@ void ABoxAppService_Poll(ABoxAppService *service, uint32_t now)
         communication_enabled = 1;
         ABoxEc800At_Task(service->at);
         if (p->after_at) p->after_at(p->context, now);
-        ABoxBootV2App_Task();
+        if (p->ota) p->ota(p->context, now);
+        else ABoxBootV2App_Task();
         if (p->before_enrollment) p->before_enrollment(p->context, now);
         if (p->enrollment) p->enrollment(p->context, now);
         if (p->before_cloud && !p->before_cloud(p->context, now)) goto done;
