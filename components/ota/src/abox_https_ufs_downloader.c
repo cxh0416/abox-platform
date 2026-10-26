@@ -11,6 +11,7 @@ enum {
     ST_TLS_VERSION,
     ST_TLS_LEVEL,
     ST_TLS_SNI,
+    ST_TLS_CIPHER,
     ST_TLS_CA,
     ST_HTTP_CONTEXT,
     ST_HTTP_TLS,
@@ -209,6 +210,13 @@ static void succeeded(ABoxHttpsUfsDownloader *d)
         if (!submit(d, "AT+QSSLCFG=\"sni\",1,1", 5000U)) finish_failure(d, ABOX_HTTPS_UFS_ERROR_HTTP);
         break;
     case ST_TLS_SNI:
+        /* Enrollment also uses context 1 and may leave an RSA-only suite.
+         * Restore the modem's full TLS 1.2 suite set for the OTA endpoint. */
+        d->state = ST_TLS_CIPHER;
+        if (!submit(d, "AT+QSSLCFG=\"ciphersuite\",1,0xFFFF", 5000U))
+            finish_failure(d, ABOX_HTTPS_UFS_ERROR_HTTP);
+        break;
+    case ST_TLS_CIPHER:
         d->state = ST_TLS_CA;
         (void)snprintf(command, sizeof(command), "AT+QSSLCFG=\"cacert\",1,\"%s\"",
                        d->config.ca_file);

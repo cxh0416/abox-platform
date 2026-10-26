@@ -32,6 +32,7 @@ typedef struct {
     uint32_t listed_size;
     uint32_t overflow_count;
     uint32_t pdp_recovery_count;
+    uint8_t cipher_configured;
 } Mock;
 
 static uint32_t tick_ms(void *context) { return ((Mock *)context)->tick; }
@@ -118,6 +119,10 @@ static void service_command(ABoxHttpsUfsDownloader *d, Mock *m)
     printf("CMD %s\n", current);
     if (strcmp(current, "AT+QIDEACT=1") == 0)
         ++m->pdp_recovery_count;
+    if (strcmp(current, "AT+QSSLCFG=\"ciphersuite\",1,0xFFFF") == 0)
+        m->cipher_configured = 1U;
+    if (strncmp(current, "AT+QHTTPGET", 11U) == 0)
+        assert(m->cipher_configured); /* An enrollment session left RSA only. */
     if (strncmp(current, "AT+QHTTPURL=", 12U) == 0 ||
         strncmp(current, "AT+QFWRITE=", 11U) == 0)
         ABoxHttpsUfs_Task(d);
