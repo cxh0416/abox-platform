@@ -35,7 +35,7 @@ static void answer(Fixture *f)
         assert(handle==7 && size<=1024);f->sent_size=0;feed(f,"\r\nCONNECT\r\n");
         assert(f->sent_size==size && f->position+size<=sizeof(f->file));
         memcpy(f->file+f->position,f->sent,size);f->position+=size;f->size=f->position;
-        snprintf(line,sizeof(line),"\r\n+QFWRITE: %u,%u\r\nOK\r\n",f->short_write ? size-1U : size,size);feed(f,line);
+        snprintf(line,sizeof(line),"\r\n+QFWRITE: %u,%u\r\nOK\r\n",f->short_write ? size-1U : size,f->size);feed(f,line);
     } else if (sscanf(command,"AT+QFREAD=%u,%u",&handle,&size)==2) {
         assert(handle==7 && size<=1024);
         if (f->position==f->size) { feed(f,"\r\n+CME ERROR: 402\r\n");return; }

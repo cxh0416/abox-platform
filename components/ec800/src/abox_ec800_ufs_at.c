@@ -54,7 +54,8 @@ static void event(ABoxEc800Event kind, const uint8_t *data, uint16_t length, voi
                    ABoxEc800At_BeginRaw(b->at, b->owner, a)) b->raw_seen = 1;
         else { ABoxEc800At_Quarantine(b->at); finish(b, ABOX_ASYNC_QUARANTINED); }
     } else if (sscanf(line, "+QFWRITE: %u,%u", &a, &n) == 2)
-        b->write_seen = a == b->chunk_size && n == b->chunk_size;
+        /* The second value is the file length, not this chunk's length. */
+        b->write_seen = a == b->chunk_size && n == b->chunk_start + b->chunk_size;
     /* In LIST state an empty successful listing proves absence. An exact-name
      * request returning any file cannot be treated as first use. */
     else if (b->state == LIST && !strncmp(line, "+QFLST:", 7)) b->handle_seen = 1;
