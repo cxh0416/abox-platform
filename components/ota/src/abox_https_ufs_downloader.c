@@ -11,6 +11,8 @@ enum {
     ST_TLS_VERSION,
     ST_TLS_LEVEL,
     ST_TLS_SNI,
+    ST_TLS_TIME,
+    ST_TLS_CERT_TIME,
     ST_TLS_CIPHER,
     ST_TLS_CA,
     ST_HTTP_CONTEXT,
@@ -210,6 +212,19 @@ static void succeeded(ABoxHttpsUfsDownloader *d)
         if (!submit(d, "AT+QSSLCFG=\"sni\",1,1", 5000U)) finish_failure(d, ABOX_HTTPS_UFS_ERROR_HTTP);
         break;
     case ST_TLS_SNI:
+        /* OTA historically uses the modem's expiry-tolerant time policy.
+         * Enrollment enables both expiry checks on shared context 1; never
+         * inherit those settings implicitly. CA/signature checks stay on. */
+        d->state = ST_TLS_TIME;
+        if (!submit(d, "AT+QSSLCFG=\"ignorelocaltime\",1,1", 5000U))
+            finish_failure(d, ABOX_HTTPS_UFS_ERROR_HTTP);
+        break;
+    case ST_TLS_TIME:
+        d->state = ST_TLS_CERT_TIME;
+        if (!submit(d, "AT+QSSLCFG=\"ignorecertitem\",1,1", 5000U))
+            finish_failure(d, ABOX_HTTPS_UFS_ERROR_HTTP);
+        break;
+    case ST_TLS_CERT_TIME:
         /* Enrollment also uses context 1 and may leave an RSA-only suite.
          * Restore the modem's full TLS 1.2 suite set for the OTA endpoint. */
         d->state = ST_TLS_CIPHER;

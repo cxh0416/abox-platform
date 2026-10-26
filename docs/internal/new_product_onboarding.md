@@ -56,6 +56,8 @@ MCU 全擦不包含 EC800 UFS 和服务端 UID 登记。验收需明确这两个
 
 空板实测按顺序覆盖：无有效配置时禁止默认 MQTT → 新入网申请/人工审批 → 首次 MQTT 连接、订阅、发布证明 → 凭据保存并回读 → 服务端实际接收 Manifest/心跳/状态 → 紧接着执行正式 OTA → 独立查询目标版本及 Boot `CONFIRMED` → 重启后凭据、幂等日志恢复。入网后首次 OTA 前不插入额外复位，以覆盖共用 TLS 上下文从入网切换到下载。保留配置的 OTA/重启属于后续独立场景。空板流程不发送业务动作命令；运动与断电恢复需要各自具备条件时另行验收。
 
+入网与 OTA 共用 SSL context 1，但策略不同：入网显式启用证书有效期检查；现有 OTA 保留模组的有效期容错策略，下载器必须显式设置 `ignorelocaltime=1`、`ignorecertitem=1` 和完整 cipher 集，不能依赖重启后的默认值。`ignorecertitem=1` 只忽略有效期过期，CA、签名和其他证书项不因此关闭（[移远 SSL 参数说明](https://www.quectel.com/content/uploads/2024/02/Quectel_EC200UEG91xU_Series_SSL_Application_Note_V1.2.pdf)）。OTA 不以证书有效期作为拒绝条件这一限制仍然存在；该策略不能解释为所有证书校验均已通过。
+
 主机、ARM、标准板与实车证据分开记录。标准板没有整板电源控制，不能声称冷上电/pre-App 问题已验收；Broker kick 不能代替完整蜂窝断网，ready 状态不能代替持续 OTA 下载与恢复。COM3 为 485 业务接口。正式打包不表示现场 OTA、机械运动或反馈已验收。
 
 此前阶段设计和记录见 [归档](history/2026-09-30-new-product-onboarding-pre-close.md)；原始证据与既有哈希保持不变。

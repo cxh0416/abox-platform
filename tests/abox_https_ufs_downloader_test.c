@@ -33,6 +33,8 @@ typedef struct {
     uint32_t overflow_count;
     uint32_t pdp_recovery_count;
     uint8_t cipher_configured;
+    uint8_t time_configured;
+    uint8_t certificate_time_configured;
 } Mock;
 
 static uint32_t tick_ms(void *context) { return ((Mock *)context)->tick; }
@@ -121,8 +123,14 @@ static void service_command(ABoxHttpsUfsDownloader *d, Mock *m)
         ++m->pdp_recovery_count;
     if (strcmp(current, "AT+QSSLCFG=\"ciphersuite\",1,0xFFFF") == 0)
         m->cipher_configured = 1U;
-    if (strncmp(current, "AT+QHTTPGET", 11U) == 0)
-        assert(m->cipher_configured); /* An enrollment session left RSA only. */
+    if (strcmp(current, "AT+QSSLCFG=\"ignorelocaltime\",1,1") == 0)
+        m->time_configured = 1U;
+    if (strcmp(current, "AT+QSSLCFG=\"ignorecertitem\",1,1") == 0)
+        m->certificate_time_configured = 1U;
+    if (strncmp(current, "AT+QHTTPGET", 11U) == 0) {
+        /* Enrollment left RSA-only suites and both expiry checks enabled. */
+        assert(m->cipher_configured && m->time_configured && m->certificate_time_configured);
+    }
     if (strncmp(current, "AT+QHTTPURL=", 12U) == 0 ||
         strncmp(current, "AT+QFWRITE=", 11U) == 0)
         ABoxHttpsUfs_Task(d);
