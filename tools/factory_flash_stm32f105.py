@@ -104,7 +104,7 @@ def main(argv=None):
     try:
         link.exec_command("DisableAutoUpdateFW")
         link.open(serial_no=args.serial)
-        for command in ("SetRestartOnClose=0", "SetSkipDebugDeInit=1", "ForceAttachTarget 1"):
+        for command in ("SetRestartOnClose=1", "SetSkipDebugDeInit=1", "ForceAttachTarget 1"):
             link.exec_command(command)
         link.set_tif(pylink.enums.JLinkInterfaces.SWD)
         link.connect("STM32F105RC", speed=1000)
