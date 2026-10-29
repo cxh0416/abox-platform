@@ -10,7 +10,8 @@ typedef struct {
 typedef struct {
     ABoxTimeSync sampling;
     ABoxTimeClientPort port;
-    char request_topic[128], response_topic[128];
+    /* 32-byte VID plus the longest fixed time topic and NUL. */
+    char response_topic[72];
     uint64_t seed, utc;
     uint32_t generation;
     uint8_t ready;

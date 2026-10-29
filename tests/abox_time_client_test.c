@@ -40,6 +40,8 @@ int main(void)
     uint32_t sequence=c.sampling.sequence;
     assert(ABoxTimeClient_SetDevice(&c,"device"));assert(sequence==c.sampling.sequence && !c.sampling.pending);
     assert(!ABoxTimeClient_SetDevice(&c,"a/b"));
+    assert(ABoxTimeClient_SetDevice(&c,"12345678901234567890123456789012"));
+    assert(!strcmp(c.response_topic,"/zxwl/abox/12345678901234567890123456789012/internal/time/response"));
     assert(!ABoxTimeClient_Init(&c,"device",123,NULL));
     unsigned previous=sends;ABoxTimeClient_Poll(&c,1,4,5000,0);assert(sends==previous);
     assert(!ABoxTimeClient_Init(&c,"a/b",123,&port));
