@@ -12,7 +12,7 @@
 
 ## MQTT 受控配置
 
-平台通过内部 V2 `internal_config` 的 `set_mqtt` 提交 `vid`、`host`、`port`、`username`、`password`、`tlsEnabled=true` 和整数 `tlsProfileId`。身份不变；TLS CA/PSK 模式和设备已有独立 PSK 凭据保持不变，PSK 轮换使用独立事务。只接受目标 TLS，活动连接也必须为 TLS。产品解析应复用 `ABoxCloudInternalV2_MqttTlsCandidate`，并使用已有 trial、executor 与 ConfigStore；设备在业务忙、OTA 或其它冲突状态时拒绝。
+平台通过内部 V2 `internal_config` 的 `set_mqtt` 提交 `vid`、`host`、`port`、`username`、`password`、`tlsEnabled=true` 和整数 `tlsProfileId`。普通 MQTT 参数切换保持 VID；独立的 VID 变更入口先预留新身份并调整逐设备 ACL，再复用同一候选事务，固件通过 `maintenanceProtocols.vidChangeTransaction=1` 声明该能力。TLS CA/PSK 模式和设备已有独立 PSK 凭据保持不变，PSK 轮换使用独立事务。只接受目标 TLS，活动连接也必须为 TLS。产品解析应复用 `ABoxCloudInternalV2_MqttTlsCandidate`，并使用已有 trial、executor 与 ConfigStore；设备在业务忙、OTA 或其它冲突状态时拒绝。
 
 `get_info` 至少返回 `vid`、`fwVersion`、`otaBusy`、`mqttHost`、`mqttPort`、`mqttTls`、`mqttTlsActive`、`mqttTlsProfileId`、`mqttAuthMode`（`ca` 或 `psk`）、`trustedTime`，及 `maintenanceProtocols.mqttConfigTransaction=1`。`mqttTls` 描述已保存配置；`mqttTlsActive` 描述当前已认证的活动连接，`trustedTime` 表示可信授时，三者不可相互代替。不能返回 MQTT 密码或 PSK 密钥。
 
@@ -21,3 +21,5 @@
 ## 注册与验证
 
 产品在服务端产品和硬件合同中登记，硬件合同使用 TLS 策略及真实 profile；产品通过统一生命周期入口、公共组件和业务回调接入。产品固件需实际提供上述字段和结果，不能仅靠注册表宣称支持。共同验证覆盖入网、TLS 负向验证、心跳归属、重连、可信授时、配置成功及失败恢复、重启恢复与失联结果不明；产品额外验证业务安全与资源预算。主机测试不能代替蜂窝网络、模组、Broker、Flash 和现场运行的验证。
+
+新产品接入只需在硬件合同登记固定 `product`、`transport=tls`、真实 `tls_profile_id` 及是否支持 PSK 入网，在产品配置登记 `protocol=abox_v4`、`business_profile`、`business_profile_major`、公共 V4 `topics` 和既有 Broker/OTA 字段。平台由该注册选择通用适配器、Topic、心跳归属、授时和维护入口；业务命令继续由产品 Profile 定义。固件接入公共生命周期、TLS runtime、授时客户端及维护事务，提供产品身份、配置持久化与业务忙回调，不能为新产品复制公共协议解析或新增在线/授时产品白名单。
