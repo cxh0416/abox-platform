@@ -56,8 +56,8 @@ int main(void)
                                      sizeof(request_id), sizeof(token)};
     ABoxEnrollmentPort port = {&m, ready, identity, post, cancel_http, start_trial, cancel_trial};
     const char *approved = "{\"status\":\"approved\",\"vid\":\"CANON001\",\"mqtt\":{\"host\":\"mqtt.example\","
-                           "\"port\":19683,\"username\":\"abox_device\",\"password\":\"secret-1\","
-                           "\"tlsEnabled\":false,\"tlsProfileId\":\"\"}}";
+                           "\"port\":19688,\"username\":\"abox_device\",\"password\":\"secret-1\","
+                           "\"tlsEnabled\":true,\"tlsProfileId\":\"1\"}}";
     CHECK(ABoxEnrollment_Init(&e, &port, &buffers, "https://ota.example:20443"));
     ABoxEnrollment_Poll(&e, 0);
     CHECK(m.posts == 0);
@@ -102,7 +102,11 @@ int main(void)
             "\"port\":65536,\"username\":\"abox_device\",\"password\":\"secret-1\",\"tlsEnabled\":false}}", 1, 1002);
     CHECK(e.state == ABOX_ENROLLMENT_WAITING && m.trials == 2);
     ABoxEnrollment_Poll(&e, 121002);
-    ABoxEnrollment_OnHttp(&e, 403, 0, 1, 121003);
+    reply(&e, response, 200, "{\"status\":\"approved\",\"vid\":\"CANON001\",\"mqtt\":{\"host\":\"mqtt.example\","
+          "\"port\":19683,\"username\":\"abox_device\",\"password\":\"secret-1\",\"tlsEnabled\":false}}", 1, 121003);
+    CHECK(e.state == ABOX_ENROLLMENT_WAITING && m.trials == 2);
+    ABoxEnrollment_Poll(&e, 241003);
+    ABoxEnrollment_OnHttp(&e, 403, 0, 1, 241004);
     CHECK(!e.have_request && !token[0]);
 
     CHECK(ABoxEnrollment_Init(&e, &port, &buffers, "https://ota.example:20443"));

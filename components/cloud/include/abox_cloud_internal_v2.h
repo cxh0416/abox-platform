@@ -56,6 +56,16 @@ int ABoxCloudInternalV2_Open(const char *payload, size_t length,
                              const char *expected_product,
                              size_t request_id_capacity,
                              ABoxCloudInternalV2Envelope *envelope);
+/* V4 TLS-only MQTT candidate; string pointers live until envelope Close.
+ * The caller preserves the active TLS authentication credentials and stages
+ * this candidate using the existing trial and ConfigStore. */
+typedef struct {
+    const char *vid, *host, *username, *password;
+    uint16_t port;
+    uint8_t tls_profile_id;
+} ABoxCloudMqttTlsCandidate;
+int ABoxCloudInternalV2_MqttTlsCandidate(const cJSON *params,
+                                         ABoxCloudMqttTlsCandidate *out);
 /* Parse the internal rotation fields only; transport/trial policy stays with caller. */
 int ABoxCloudInternalV2_PskCredentials(const cJSON *params, ABoxTlsCredentials *output);
 void ABoxCloudInternalV2_Close(ABoxCloudInternalV2Envelope *envelope);

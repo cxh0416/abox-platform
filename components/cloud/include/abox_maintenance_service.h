@@ -13,6 +13,11 @@ typedef struct {
     int (*action)(void *, ABoxMqttTrialExecutorAction, uint64_t,
                   const ABoxMqttConfig *, uint32_t);
 } ABoxMaintenanceServicePort;
+/* V4 maintenance accepts authenticated TLS active and candidate only.
+ * This is a policy gate over the existing trial, not a separate state machine. */
+int ABoxMaintenanceService_StartTls(ABoxMqttTrial *trial,
+    const ABoxMqttConfig *active, const ABoxMqttConfig *candidate,
+    uint64_t proof, uint32_t now, uint32_t timeout, uint32_t restore_timeout);
 int ABoxMaintenanceService_Poll(ABoxMqttTrial *trial,
     ABoxMqttTrialExecutor *executor, const ABoxMaintenanceServicePort *port,
     uint32_t now);

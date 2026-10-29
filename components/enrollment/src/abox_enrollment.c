@@ -182,7 +182,7 @@ static int credential_parse(ABoxEnrollmentCredential *out, const cJSON *root,
     }
     if (!cJSON_IsString(vid) || !cJSON_IsString(host) || !cJSON_IsNumber(port) ||
         !cJSON_IsString(user) || !cJSON_IsString(password) ||
-        !(cJSON_IsTrue(tls) || cJSON_IsFalse(tls)) ||
+        !cJSON_IsTrue(tls) ||
         port->valuedouble < 1.0 || port->valuedouble > 65535.0 ||
         (double)(uint16_t)port->valuedouble != port->valuedouble ||
         !safe_text(vid->valuestring, 31U, "_-") || !vid->valuestring[0] ||

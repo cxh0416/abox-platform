@@ -107,6 +107,53 @@ void ABoxCloudInternalV2_Close(ABoxCloudInternalV2Envelope *envelope)
     memset(envelope, 0, sizeof(*envelope));
 }
 
+/* Reject duplicate fields and unsafe modem command strings before staging. */
+static const cJSON *unique_item(const cJSON *object, const char *name)
+{
+    const cJSON *item, *found = NULL;
+    if (!cJSON_IsObject(object)) return NULL;
+    for (item = object->child; item; item = item->next) {
+        if (item->string && strcmp(item->string, name) == 0) {
+            if (found) return NULL;
+            found = item;
+        }
+    }
+    return found;
+}
+static int mqtt_text(const cJSON *item, size_t max, int vid)
+{
+    size_t n = 0U;
+    const unsigned char *p;
+    if (!cJSON_IsString(item) || !item->valuestring) return 0;
+    for (p = (const unsigned char *)item->valuestring; *p; ++p) {
+        if (++n > max || *p < 33U || *p > 126U || *p == '"' || *p == '\\' ||
+            (vid && !((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+                      (*p >= '0' && *p <= '9') || *p == '_' || *p == '-'))) return 0;
+    }
+    return n != 0U;
+}
+int ABoxCloudInternalV2_MqttTlsCandidate(const cJSON *params, ABoxCloudMqttTlsCandidate *out)
+{
+    const cJSON *vid, *host, *user, *password, *port, *tls, *profile;
+    if (!out) return 0;
+    memset(out, 0, sizeof(*out));
+    vid = unique_item(params, "vid"); host = unique_item(params, "host");
+    user = unique_item(params, "username"); password = unique_item(params, "password");
+    port = unique_item(params, "port"); tls = unique_item(params, "tlsEnabled");
+    profile = unique_item(params, "tlsProfileId");
+    if (!mqtt_text(vid, 31U, 1) || !mqtt_text(host, 63U, 0) ||
+        !mqtt_text(user, 31U, 0) || !mqtt_text(password, 63U, 0) ||
+        !cJSON_IsTrue(tls) || !cJSON_IsNumber(port) ||
+        port->valuedouble < 1 || port->valuedouble > 65535 ||
+        port->valuedouble != (double)(uint16_t)port->valuedouble ||
+        !cJSON_IsNumber(profile) || profile->valuedouble < 0 || profile->valuedouble > 255 ||
+        profile->valuedouble != (double)(uint8_t)profile->valuedouble) return 0;
+    out->vid = vid->valuestring; out->host = host->valuestring;
+    out->username = user->valuestring; out->password = password->valuestring;
+    out->port = (uint16_t)port->valuedouble; out->tls_profile_id = (uint8_t)profile->valuedouble;
+    return 1;
+}
+
 int ABoxCloudInternalV2_PskCredentials(const cJSON *params, ABoxTlsCredentials *output)
 {
     const cJSON *identity = cJSON_GetObjectItemCaseSensitive(params, "identity");

@@ -66,5 +66,20 @@ int main(void)
             &fields) == ABOX_INTERNAL_V2_INVALID_ID);
         cJSON_Delete(root);
     }
+    {
+        ABoxCloudMqttTlsCandidate candidate;
+        cJSON *params = cJSON_Parse("{\"vid\":\"V-1\",\"host\":\"mqtt.example\",\"port\":19688,\"username\":\"user\",\"password\":\"secret\",\"tlsEnabled\":true,\"tlsProfileId\":1}");
+        assert(ABoxCloudInternalV2_MqttTlsCandidate(params, &candidate));
+        assert(candidate.port == 19688U && candidate.tls_profile_id == 1U && !strcmp(candidate.vid, "V-1"));
+        cJSON_ReplaceItemInObject(params, "tlsEnabled", cJSON_CreateFalse());
+        assert(!ABoxCloudInternalV2_MqttTlsCandidate(params, &candidate));
+        cJSON_ReplaceItemInObject(params, "tlsEnabled", cJSON_CreateTrue());
+        cJSON_ReplaceItemInObject(params, "port", cJSON_CreateNumber(1.5));
+        assert(!ABoxCloudInternalV2_MqttTlsCandidate(params, &candidate));
+        cJSON_ReplaceItemInObject(params, "port", cJSON_CreateNumber(19688));
+        cJSON_AddBoolToObject(params, "tlsEnabled", 1);
+        assert(!ABoxCloudInternalV2_MqttTlsCandidate(params, &candidate));
+        cJSON_Delete(params);
+    }
     return 0;
 }

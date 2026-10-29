@@ -1,6 +1,6 @@
 # ABox MQTT runtime 统一配置合同
 
-本文是 ABox Platform 内部实现与运维合同，不属于公共业务 MQTT V4 协议。
+本文描述共享 runtime。V4 产品的 TLS、入网、在线与授时合同见 [V4 公共运维合同](v4_common_maintenance.md)；公共 runtime 可被其他用途复用，不能据此为 V4 放行明文。
 
 ## 1. 统一 runtime 配置
 
@@ -22,7 +22,7 @@ CA 模式执行 CA/证书及时间校验，PSK 模式执行既有 PSK 身份和�
 （见“TLS 认证模式”）。任一步失败都按 candidate 失败处理。
 
 正式开关只能来自 runtime 配置。构建宏可以裁剪测试目标，但不得作为产品切换
-明文/TLS 的正式机制；交付固件必须同时保留两种连接能力。
+明文/TLS 的正式机制；V4 交付固件必须只接受 TLS 配置；不因 runtime 支持其他模式而放行明文。
 
 产品 Flash ABI 不属于 Platform 合同。送餐车可继续使用
 `BOARD_CONFIG_FLAG_MQTT_TLS`，底盘 V5 可继续使用 `mqtt_tls_enabled`，新产品也可
@@ -64,7 +64,7 @@ proof 失败均不得尝试同一 host/port 的明文连接。只有收到明确
 
 ## 4. 统一内部运维字段
 
-所有 ABox 产品的 `set_mqtt` candidate 必须同时提供：
+V4 产品的 `set_mqtt` candidate 必须同时提供：
 
 - `host`、`port`、`username`、`password`；
 - `tlsEnabled`（Boolean）；

@@ -1,5 +1,6 @@
 #include "abox_maintenance_service.h"
 #include <assert.h>
+#include <string.h>
 static ABoxMqttTrialExecutorAction last;
 static int accept = 1, writes, fail_write;
 static int action(void *context, ABoxMqttTrialExecutorAction value,
@@ -28,6 +29,27 @@ int main(void)
     ABoxMqttConfig config = {"broker", 1883U, "u", "p", 0, 0};
     ABoxMaintenanceServicePort port = {0, action};
     ABoxConfigStorePort store = {0, write_snapshot};
+    {
+        ABoxMqttConfig active = {"broker", 19688U, "u", "p", 1U, 0U};
+        ABoxMqttConfig candidate = {"next", 19688U, "u", "p", 1U, 0U};
+        assert(ABoxMqttTrialExecutor_Init(&executor, &trial));
+        assert(!ABoxMaintenanceService_StartTls(&trial, &config, &candidate, 1U, 0U, 100U, 100U));
+        assert(!ABoxMaintenanceService_StartTls(&trial, &active, &config, 1U, 0U, 100U, 100U));
+        candidate.tls_credentials.mode = ABOX_TLS_AUTH_PSK;
+        assert(!ABoxMaintenanceService_StartTls(&trial, &active, &candidate, 1U, 0U, 100U, 100U));
+        candidate.tls_credentials.mode = ABOX_TLS_AUTH_CA;
+        assert(ABoxMaintenanceService_StartTls(&trial, &active, &candidate, 1U, 0U, 100U, 100U));
+        assert(ABoxMqttTrialExecutor_Init(&executor, &trial));
+        active.tls_credentials.mode = ABOX_TLS_AUTH_PSK;
+        active.tls_credentials.generation = 1U;
+        strcpy(active.tls_credentials.identity, "device.1");
+        strcpy(active.tls_credentials.secret, "01234567890123456789012345678901");
+        candidate.tls_credentials = active.tls_credentials;
+        candidate.tls_credentials.secret[0] = 'x';
+        assert(!ABoxMaintenanceService_StartTls(&trial, &active, &candidate, 1U, 0U, 100U, 100U));
+        candidate.tls_credentials = active.tls_credentials;
+        assert(ABoxMaintenanceService_StartTls(&trial, &active, &candidate, 1U, 0U, 100U, 100U));
+    }
     assert(ABoxMqttTrialExecutor_Init(&executor, &trial));
     assert(ABoxMqttTrial_StartFirst(&trial, &config, 1U, 0U));
     assert(ABoxMaintenanceService_Poll(&trial, &executor, &port, 1U));

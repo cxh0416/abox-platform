@@ -1,4 +1,19 @@
 #include "abox_maintenance_service.h"
+#include <string.h>
+int ABoxMaintenanceService_StartTls(ABoxMqttTrial *trial,
+    const ABoxMqttConfig *active, const ABoxMqttConfig *candidate,
+    uint64_t proof, uint32_t now, uint32_t timeout, uint32_t restore_timeout)
+{
+    if (!active || !candidate || active->tls_enabled != 1U || candidate->tls_enabled != 1U ||
+        !ABoxTlsCredentials_Valid(&active->tls_credentials) ||
+        !ABoxTlsCredentials_Valid(&candidate->tls_credentials) ||
+        active->tls_credentials.mode != candidate->tls_credentials.mode) return 0;
+    if (active->tls_credentials.mode == ABOX_TLS_AUTH_PSK &&
+        (active->tls_credentials.generation != candidate->tls_credentials.generation ||
+         strncmp(active->tls_credentials.identity, candidate->tls_credentials.identity, sizeof(active->tls_credentials.identity)) ||
+         memcmp(active->tls_credentials.secret, candidate->tls_credentials.secret, 32U))) return 0;
+    return ABoxMqttTrial_Start(trial, active, candidate, proof, now, timeout, restore_timeout);
+}
 int ABoxMaintenanceService_Poll(ABoxMqttTrial *trial,
     ABoxMqttTrialExecutor *executor, const ABoxMaintenanceServicePort *port,
     uint32_t now)
