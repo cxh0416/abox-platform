@@ -19,6 +19,11 @@ void ABoxMqttRuntimeOptions_StandardEc800(ABoxMqttRuntimeOptions *o,
   o->tls_profile_id = tls_profile_id;
   o->supported_tls_context_mask = (uint8_t)(1U << 2U);
 }
+void ABoxMqttRuntimeOptions_V4Ec800(ABoxMqttRuntimeOptions *o,
+                                    uint32_t owner, uint8_t tls_profile_id) {
+  ABoxMqttRuntimeOptions_StandardEc800(o, owner, tls_profile_id);
+  if (o) o->require_tls = 1U;
+}
 static uint8_t copy_text(char *d, uint16_t c, const char *s) {
   size_t n;
   if (!d || !c || !s)
@@ -40,6 +45,7 @@ static void gate(ABoxMqttRuntime *r, uint8_t on) {
 }
 static uint8_t config(ABoxMqttRuntime *r, const ABoxMqttConfig *c) {
   if (!c || !c->port || c->tls_enabled > 1U ||
+      (r->options.require_tls && c->tls_enabled != 1U) ||
       (c->tls_enabled && !ABoxTlsCredentials_Valid(&c->tls_credentials)) ||
       (c->tls_enabled && c->tls_profile_id != r->options.tls_profile_id) ||
       !copy_text(r->host, sizeof(r->host), c->host) ||

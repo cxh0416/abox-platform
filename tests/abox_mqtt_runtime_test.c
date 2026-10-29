@@ -424,5 +424,22 @@ int main(void)
         assert(!comm_runtime.lease.generation && !comm_runtime.blocked);
         assert(comm_runtime.state==ABOX_MQTT_RUNTIME_WAIT_CA);
     }
+    /* V4 rejects plaintext before any AT command, including restore paths. */
+    ABoxEc800At v4_at; ABoxMqttRuntime v4_runtime; Fixture v4_fixture = {0};
+    ABoxEc800AtPort v4_at_port = at_port; v4_at_port.context = &v4_fixture;
+    ABoxMqttRuntimePort v4_port = port; v4_port.user = &v4_fixture;
+    v4_port.recovery_allowed = NULL;
+    ABoxMqttRuntimeOptions_V4Ec800(&standard, 20U, 0U);
+    assert(standard.require_tls);
+    assert(ABoxEc800At_Init(&v4_at, &v4_at_port));
+    assert(!ABoxMqttRuntime_Init(&v4_runtime,&v4_at,&v4_port,&standard,&first,0));
+    assert(!v4_fixture.writes);
+    assert(ABoxMqttRuntime_Init(&v4_runtime,&v4_at,&v4_port,&standard,NULL,0));
+    assert(!ABoxMqttRuntime_Stage(&v4_runtime,&first));
+    assert(!ABoxMqttRuntime_Apply(&v4_runtime,&first,1));
+    assert(!ABoxMqttRuntime_Restore(&v4_runtime,&first,1));
+    assert(!v4_fixture.writes && !ABoxMqttRuntime_RequestedConfig(&v4_runtime));
+    ABoxMqttConfig v4_tls=first; v4_tls.tls_enabled=1;
+    assert(ABoxMqttRuntime_Stage(&v4_runtime,&v4_tls));
     return 0;
 }

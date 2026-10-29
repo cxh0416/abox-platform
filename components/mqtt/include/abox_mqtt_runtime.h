@@ -92,12 +92,16 @@ typedef struct {
    * The configured mask then limits acceptable observed contexts. */
   uint8_t probe_tls_capability;
   uint8_t query_clock_mode;
+  uint8_t require_tls;
 } ABoxMqttRuntimeOptions;
 /* Standard STM32F105/EC800 wiring; callers still supply product lifecycle
  * callbacks and may override timeouts for a bench fault-injection build. */
 void ABoxMqttRuntimeOptions_StandardEc800(ABoxMqttRuntimeOptions *,
                                           uint32_t owner,
                                           uint8_t tls_profile_id);
+/* V4 enrollment, active config and every candidate/restore require TLS. */
+void ABoxMqttRuntimeOptions_V4Ec800(ABoxMqttRuntimeOptions *, uint32_t owner,
+                                    uint8_t tls_profile_id);
 typedef struct {
   ABoxMqttRuntimePort callbacks;
   ABoxMqttRuntimeOptions options;
