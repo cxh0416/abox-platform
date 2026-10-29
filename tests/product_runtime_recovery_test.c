@@ -42,14 +42,30 @@ static int write_at(void *u, const uint8_t *d, uint16_t n, uint32_t t)
 #define TASK MqttRuntime_Task
 #define NEEDS MqttRuntime_NeedsModemRecovery
 #endif
+static void reach_ready(ABoxEc800At* at)
+{
+    online=1;
+    for (unsigned i=0; i<200 && !ABoxMqttRuntime_IsReady(&g_runtime); ++i) {
+        TASK(++now); ABoxEc800At_Task(at);
+        if (at->active_valid) {
+            const char* reply=strstr(at->active.command,"QSSLCFG=?") ?
+                "+QSSLCFG: \"sslversion\",(0-3)\r\nOK\r\n" : "OK\r\n";
+            ABoxEc800At_Feed(at,(const uint8_t*)reply,(uint16_t)strlen(reply));
+        }
+    }
+    assert(ABoxMqttRuntime_IsReady(&g_runtime));
+}
 int main(void)
 {
     ABoxEc800At at;
     ABoxEc800AtPort p = {.tick_ms=tick, .write=write_at};
-    ABoxMqttConfig c = {.host="fixture.example", .port=1883, .username="u", .password="p"};
+    ABoxMqttConfig c = {.host="fixture.example", .port=8883, .username="u", .password="p", .tls_enabled=1};
+#ifdef PRODUCT_SWEEPER
+    c.tls_profile_id=1;
+#endif
     assert(ABoxEc800At_Init(&at, &p));
     assert(INIT(&at, &c, 0));
-    TASK(1); online=1; TASK(2); TASK(3);
+    reach_ready(&at);
     assert(ABoxMqttRuntime_IsReady(&g_runtime));
     online=0;
     g_runtime.state=ABOX_MQTT_RUNTIME_CONNECT;
@@ -59,7 +75,7 @@ int main(void)
     ABoxEc800At_AbortAll(&at, ABOX_EC800_RESULT_ERROR);
     ABoxEc800At_Feed(&at, (const uint8_t *)"RDY\r\n", 5);
     assert(!NEEDS() && !g_runtime.blocked && !g_runtime.waiting);
-    TASK(60002); online=1; TASK(60003); TASK(60004);
+    now=60002; reach_ready(&at);
     assert(ABoxMqttRuntime_IsReady(&g_runtime));
     ABoxMqttConfig staged=c; staged.host="staged.example";
     assert(ABoxMqttRuntime_Stage(&g_runtime,&staged));
@@ -68,7 +84,7 @@ int main(void)
     assert(paused && !security && !NEEDS());
     assert(!strcmp(ABoxMqttRuntime_ActiveConfig(&g_runtime)->host,"fixture.example"));
     assert(ABoxMqttRuntime_Activate(&g_runtime,60005));
-    TASK(60006); TASK(60007); online=1; TASK(60008); TASK(60009);
+    now=60006; reach_ready(&at);
     assert(ABoxMqttRuntime_IsReady(&g_runtime));
     assert(g_runtime.command.submit(g_runtime.command.context,"AT+CCLK?",5000,&g_runtime.operation));
     g_runtime.waiting=1;

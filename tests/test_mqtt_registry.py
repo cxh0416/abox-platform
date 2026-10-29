@@ -165,6 +165,7 @@ class RegistryContracts(unittest.TestCase):
             verify(self.legacy, self.compiled_legacy + self.compiled_legacy)
 
     def test_cli_rejects_bad_input_before_executable_and_preserves_legacy_entry(self):
+        (ROOT / "build/host").mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / "build/host") as folder:
             path = Path(folder) / "registry.json"
             path.write_text('{"schemaVersion":2,"schemaVersion":1}', encoding="utf-8")
