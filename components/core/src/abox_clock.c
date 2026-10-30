@@ -12,6 +12,16 @@ static int days(int y, int m)
 void ABoxClock_Init(ABoxClock *c) { if (c) memset(c, 0, sizeof(*c)); }
 uint64_t ABoxClock_ReportedUtcMs(const ABoxClockSnapshot *s)
 { return s && s->quality == ABOX_CLOCK_SYNCHRONIZED ? s->utc_ms : 0U; }
+uint32_t ABoxClock_ReferenceErrorMs(uint32_t error, uint64_t sent, uint64_t received)
+{
+    uint64_t rtt;
+    uint32_t bound;
+    if (received < sent || error > ABOX_CLOCK_MAX_REFERENCE_ERROR_MS) return 0;
+    rtt = received - sent;
+    if (rtt > ABOX_CLOCK_MAX_RTT_MS) return 0;
+    bound = error + (uint32_t)((rtt + 1U) / 2U) + 1U;
+    return bound <= ABOX_CLOCK_MAX_SAMPLE_ERROR_MS ? bound : 0U;
+}
 ABoxClockSnapshot ABoxClock_Snapshot(const ABoxClock *c, uint64_t mono)
 {
     ABoxClockSnapshot s = {0};
@@ -50,11 +60,13 @@ int ABoxClock_Synchronize(ABoxClock *c, uint64_t server, uint32_t error,
 {
     ABoxClockSnapshot old;
     uint64_t rtt, target;
+    uint32_t bound;
     int64_t offset;
     if (!c || received < sent || server < ABOX_CLOCK_MIN_UTC_MS ||
         server >= ABOX_CLOCK_MAX_UTC_MS) return 0;
     rtt = received - sent;
-    if (rtt > ABOX_CLOCK_MAX_RTT_MS || error > ABOX_CLOCK_MAX_REFERENCE_ERROR_MS) return 0;
+    bound = ABoxClock_ReferenceErrorMs(error, sent, received);
+    if (!bound) return 0;
     target = server + rtt / 2U;
     old = ABoxClock_Snapshot(c, received);
     offset = (int64_t)target - (int64_t)old.utc_ms;
@@ -62,12 +74,12 @@ int ABoxClock_Synchronize(ABoxClock *c, uint64_t server, uint32_t error,
     c->correction_ms = 0;
     if (old.quality == ABOX_CLOCK_SYNCHRONIZED && magnitude(offset) <= 200U &&
         magnitude(offset) <= (ABOX_CLOCK_ERROR_LIMIT_MS -
-            (error + (uint32_t)((rtt + 1U) / 2U) + 1U)) / 2U) {
+            bound) / 2U) {
         c->utc_at_sync = old.utc_ms;
         c->correction_ms = offset;
     }
     c->mono_at_sync = c->last_sync_mono = received;
-    c->error_at_sync = error + (uint32_t)((rtt + 1U) / 2U) + 1U;
+    c->error_at_sync = bound;
     c->source = ABOX_CLOCK_PLATFORM;
     return 1;
 }

@@ -31,7 +31,7 @@ int main(void)
     assert(ABoxClock_Bootstrap(&c,t,100));
     assert(ABoxClock_Snapshot(&c,200).quality == ABOX_CLOCK_BOOTSTRAP);
     s = ABoxClock_Snapshot(&c,200); assert(ABoxClock_ReportedUtcMs(&s) == 0);
-    assert(!ABoxClock_Synchronize(&c,t,50,0,401));
+    assert(!ABoxClock_Synchronize(&c,t,50,0,801));
     assert(ABoxClock_Synchronize(&c,t,50,100,300));
     s = ABoxClock_Snapshot(&c,300);
     assert(s.utc_ms == t+100 && s.error_ms == 151 && s.quality == ABOX_CLOCK_SYNCHRONIZED);
@@ -55,6 +55,17 @@ int main(void)
     s.utc_ms -= 30; assert(ABoxMqttV4_CheckExpiry(&s,t+10000) == 4003);
     s.quality = ABOX_CLOCK_UNTRUSTED;
     assert(ABoxMqttV4_CheckExpiry(&s,t+10000) == 4003);
+    ABoxClock budget;
+    ABoxClock_Init(&budget);
+    assert(ABoxClock_ReferenceErrorMs(30,1000,1478)==270);
+    assert(ABoxClock_Synchronize(&budget,t,30,1000,1478));
+    assert(ABoxClock_Snapshot(&budget,1478).error_ms==270);
+    assert(ABoxClock_ReferenceErrorMs(50,0,800)==451);
+    assert(ABoxClock_Synchronize(&budget,t,50,0,800));
+    assert(!ABoxClock_ReferenceErrorMs(51,0,800));
+    assert(!ABoxClock_Synchronize(&budget,t,250,0,800));
+    assert(!ABoxClock_ReferenceErrorMs(0,0,801));
+    assert(!ABoxClock_ReferenceErrorMs(0,1000,999));
     puts("clock/lifetime tests passed");
     return 0;
 }

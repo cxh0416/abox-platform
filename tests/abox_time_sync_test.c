@@ -29,7 +29,7 @@ int main(void)
     ABoxTimeSync_Poll(&s,&p,1,1102099,42); assert(sends == 3);
     ABoxTimeSync_Poll(&s,&p,0,1102100,42);
     ABoxTimeSync_Poll(&s,&p,1,1102101,42); assert(sends == 4);
-    assert(!ABoxTimeSync_Response(&s,s.request_id,t,10,1102502)); /* RTT 401 */
+    assert(!ABoxTimeSync_Response(&s,s.request_id,t,10,1102902)); /* RTT 801 */
     assert(s.pending); /* Invalid matching response leaves the timeout in force. */
     ABoxTimeSync_Poll(&s,&p,1,1107101,42);
     ABoxTimeSync_Poll(&s,&p,1,1112101,42); /* timeout -> third sample */
@@ -52,5 +52,10 @@ int main(void)
     ABoxTimeSync_Poll(&s,&p,1,8100,0);
     ABoxTimeSync_Poll(&s,&p,1,13100,0);
     assert(applies==1 && selected==t); /* One good sample is sufficient. */
+    ABoxTimeSync_Init(&s);
+    ABoxTimeSync_Poll(&s,&p,1,1000,0);
+    assert(!ABoxTimeSync_Response(&s,s.request_id,t,250,1477) && s.pending);
+    assert(ABoxTimeSync_Response(&s,s.request_id,t,30,1478));
+    assert(s.have_best && s.best_rtt==478 && s.best_error==30);
     puts("time sync: low RTT, stale correlation, timeout, reconnect, schedule PASS");
 }

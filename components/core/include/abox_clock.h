@@ -21,7 +21,10 @@ typedef struct {
 #define ABOX_CLOCK_ERROR_LIMIT_MS 500U
 #define ABOX_CLOCK_DRIFT_PPM 100U
 #define ABOX_CLOCK_MAX_AGE_MS 7200000ULL
-#define ABOX_CLOCK_MAX_RTT_MS 400U
+#define ABOX_CLOCK_MAX_RTT_MS 800U
+/* Preserve the former worst-case sample bound (250 + 400/2 + 1).
+ * Remaining budget covers drift and the existing slew/refresh policy. */
+#define ABOX_CLOCK_MAX_SAMPLE_ERROR_MS 451U
 #define ABOX_CLOCK_MAX_REFERENCE_ERROR_MS 250U
 #define ABOX_CLOCK_MIN_UTC_MS 1704067200000ULL
 #define ABOX_CLOCK_MAX_UTC_MS 4102444800000ULL
@@ -30,6 +33,9 @@ void ABoxClock_Init(ABoxClock *clock);
 ABoxClockSnapshot ABoxClock_Snapshot(const ABoxClock *clock, uint64_t mono_ms);
 /* Unknown, bootstrap and expired time must not be advertised as trusted UTC. */
 uint64_t ABoxClock_ReportedUtcMs(const ABoxClockSnapshot *snapshot);
+/* Zero means unusable; otherwise reference + half RTT + rounding bound. */
+uint32_t ABoxClock_ReferenceErrorMs(uint32_t reference_error_ms,
+                                  uint64_t sent_mono_ms, uint64_t received_mono_ms);
 int ABoxClock_Bootstrap(ABoxClock *clock, uint64_t utc_ms, uint64_t mono_ms);
 /* server UTC is sampled immediately before publishing its response. The full
  * client round trip includes all queue/processing delay, conservatively. */
