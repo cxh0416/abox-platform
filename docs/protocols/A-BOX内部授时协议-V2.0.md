@@ -1,5 +1,7 @@
 # A-BOX 内部授时协议 V2.0
 
+内部资料，不作为业务对接协议对外交付。
+
 授时沿用内部 MQTT V2 包络，与公共业务 `sync_state` 独立。设备与平台必须使用服务器身份认证成功的 TLS MQTT 连接，两个 Topic 均为 QoS 1、retain=false。
 
 | 方向 | Topic |
