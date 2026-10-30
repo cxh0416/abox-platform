@@ -453,6 +453,13 @@ int main(void)
     feed(&f,"OK\r\n+QMTPUBEX: 1,1,0\r\n");
     ABoxMqttEc800_Poll(&f.mqtt,f.now);
     assert(f.failed==1 && !f.confirmed && !ABoxEc800At_IsBusy(&f.at));
+    /* Legacy consumers leave the optional session command untouched. */
+    memset(&f,0,sizeof(f)); config.client_index=0; config.clean_session=0;
+    assert(ABoxEc800At_Init(&f.at,&port));
+    assert(ABoxMqttEc800_Init(&f.mqtt,&f.at,&config,&buffers,&callbacks,0));
+    ABoxMqttEc800_SetSecurityReady(&f.mqtt,1);
+    assert(ABoxMqttEc800_Start(&f.mqtt,0));
+    connect_session(&f);
     puts("abox_mqtt_ec800_test passed");
     return 0;
 }
