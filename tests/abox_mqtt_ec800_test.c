@@ -74,6 +74,8 @@ static void cycle(Fixture *f)
 static void answer(Fixture *f, const char *expected, const char *response)
 {
     cycle(f);
+    if (strncmp(f->command, expected, strlen(expected)))
+        fprintf(stderr, "expected %s, received %s\n", expected, f->command);
     assert(strncmp(f->command, expected, strlen(expected)) == 0);
     f->command[0] = 0;
     feed(f, response);
@@ -87,6 +89,9 @@ static void connect_session(Fixture *f)
     answer(f, "AT+QMTCFG", "OK\r\n");
     answer(f, "AT+QMTCFG=\"version\",0,4", "OK\r\n");
     answer(f, "AT+QMTCFG=\"pdpcid\",0,1", "OK\r\n");
+    if (f->mqtt.config.clean_session)
+        answer(f, "AT+QMTCFG=\"session\",0,1", "OK\r\n");
+    else cycle(f); /* Skip the optional configuration without changing legacy settings. */
     answer(f, "AT+CEREG?", "+CEREG: 0,1\r\nOK\r\n");
     answer(f, "AT+CGATT?", "+CGATT: 1\r\nOK\r\n");
     answer(f, "AT+QIACT?", "+QIACT: 1,1,1\r\nOK\r\n");
@@ -179,6 +184,7 @@ int main(void)
     config.connect_timeout_ms = 1000U; config.subscribe_timeout_ms = 1000U;
     config.publish_timeout_ms = 1000U; config.retry_delay_ms = 100U;
     config.mqtt_version = 4U; config.pdp_context_id = 1U;
+    config.clean_session = 1U;
     buffers.header = header; buffers.header_capacity = sizeof(header);
     buffers.topic = topic; buffers.topic_capacity = sizeof(topic);
     buffers.payload = payload; buffers.payload_capacity = sizeof(payload);
@@ -275,6 +281,7 @@ int main(void)
     answer(&f, "AT+QMTCFG", "OK\r\n");
     answer(&f, "AT+QMTCFG=\"version\",0,4", "OK\r\n");
     answer(&f, "AT+QMTCFG=\"pdpcid\",0,1", "OK\r\n");
+    answer(&f, "AT+QMTCFG=\"session\",0,1", "OK\r\n");
     answer(&f, "AT+CEREG?", "+CEREG: 0,1\r\nOK\r\n");
     answer(&f, "AT+CGATT?", "+CGATT: 1\r\nOK\r\n");
     answer(&f, "AT+QIACT?", "+QIACT: 1,1,1\r\nOK\r\n");
@@ -310,6 +317,7 @@ int main(void)
     answer(&f, "AT+QMTCFG", "OK\r\n");
     answer(&f, "AT+QMTCFG=\"version\",0,4", "OK\r\n");
     answer(&f, "AT+QMTCFG=\"pdpcid\",0,1", "OK\r\n");
+    answer(&f, "AT+QMTCFG=\"session\",0,1", "OK\r\n");
     answer(&f, "AT+CEREG?", "+CEREG: 0,2\r\nOK\r\n");
     assert(ABoxMqttEc800_GetState(&f.mqtt) == ABOX_MQTT_EC800_RETRY_WAIT);
     assert(f.command[0] == 0);
@@ -340,6 +348,7 @@ int main(void)
     answer(&f, "AT+QMTCFG", "OK\r\n");
     answer(&f, "AT+QMTCFG=\"version\",1,4", "OK\r\n");
     answer(&f, "AT+QMTCFG=\"pdpcid\",1,1", "OK\r\n");
+    answer(&f, "AT+QMTCFG=\"session\",1,1", "OK\r\n");
     answer(&f, "AT+CEREG?", "+CEREG: 0,1\r\nOK\r\n");
     answer(&f, "AT+CGATT?", "+CGATT: 1\r\nOK\r\n");
     answer(&f, "AT+QIACT?", "+QIACT: 1,1,1\r\nOK\r\n");
@@ -360,6 +369,7 @@ int main(void)
     answer(&f, "AT+QMTCFG", "OK\r\n");
     answer(&f, "AT+QMTCFG=\"version\",1,4", "OK\r\n");
     answer(&f, "AT+QMTCFG=\"pdpcid\",1,1", "OK\r\n");
+    answer(&f, "AT+QMTCFG=\"session\",1,1", "OK\r\n");
     answer(&f, "AT+CEREG?", "+CEREG: 0,1\r\nOK\r\n");
     answer(&f, "AT+CGATT?", "+CGATT: 1\r\nOK\r\n");
     answer(&f, "AT+QIACT?", "+QIACT: 1,1,1\r\nOK\r\n");

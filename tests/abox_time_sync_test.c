@@ -3,8 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 static unsigned sends, applies;
+static int send_ready = 1;
 static uint64_t selected;
-static int send(void *ctx, const char *id) { (void)ctx; assert(!strncmp(id,"ts-",3)); sends++; return 1; }
+static int send(void *ctx, const char *id) { (void)ctx; assert(!strncmp(id,"ts-",3)); sends++; return send_ready; }
 static int apply(void *ctx, uint64_t utc, uint32_t err, uint64_t sent, uint64_t recv)
 { (void)ctx; (void)err; assert(recv - sent == 100); selected = utc; applies++; return 1; }
 int main(void)
@@ -29,10 +30,11 @@ int main(void)
     ABoxTimeSync_Poll(&s,&p,0,1102100,42);
     ABoxTimeSync_Poll(&s,&p,1,1102101,42); assert(sends == 4);
     assert(!ABoxTimeSync_Response(&s,s.request_id,t,10,1102502)); /* RTT 401 */
-    ABoxTimeSync_Poll(&s,&p,1,1103502,42);
-    ABoxTimeSync_Poll(&s,&p,1,1108502,42); /* timeout -> third sample */
-    ABoxTimeSync_Poll(&s,&p,1,1113502,42); /* no valid sample -> 30 s retry */
-    assert(applies == 1 && s.next_due == 1143502);
+    assert(s.pending); /* Invalid matching response leaves the timeout in force. */
+    ABoxTimeSync_Poll(&s,&p,1,1107101,42);
+    ABoxTimeSync_Poll(&s,&p,1,1112101,42); /* timeout -> third sample */
+    ABoxTimeSync_Poll(&s,&p,1,1117101,42); /* no valid sample -> 30 s retry */
+    assert(applies == 1 && s.next_due == 1147101);
     ABoxTimeSync_Init(&s);
     ABoxTimeSync_Poll(&s,&p,1,1000,42);
     assert(ABoxTimeSync_Response(&s,s.request_id,t,10,1100));
@@ -40,5 +42,15 @@ int main(void)
     assert(!ABoxTimeSync_Response(&s,s.request_id,t+3000,10,2200));
     ABoxTimeSync_Poll(&s,&p,1,3200,42);
     assert(applies == 1 && !s.have_best && s.next_due == 33200);
+    ABoxTimeSync_Init(&s); sends=applies=0; send_ready=0;
+    ABoxTimeSync_Poll(&s,&p,1,1000,0);
+    assert(!s.pending && !s.attempts && s.next_due==2000);
+    send_ready=1; ABoxTimeSync_Poll(&s,&p,1,2000,0);
+    assert(ABoxTimeSync_Response(&s,s.request_id,t,10,2100));
+    assert(!ABoxTimeSync_Response(&s,s.request_id,t,10,2101)); /* duplicate */
+    ABoxTimeSync_Poll(&s,&p,1,3100,0);
+    ABoxTimeSync_Poll(&s,&p,1,8100,0);
+    ABoxTimeSync_Poll(&s,&p,1,13100,0);
+    assert(applies==1 && selected==t); /* One good sample is sufficient. */
     puts("time sync: low RTT, stale correlation, timeout, reconnect, schedule PASS");
 }

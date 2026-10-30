@@ -46,6 +46,18 @@ int main(void)
     unsigned previous=sends;ABoxTimeClient_Poll(&c,1,4,5000,0);assert(sends==previous);
     assert(!ABoxTimeClient_Init(&c,"a/b",123,&port));
     ABoxTimeClient_Poll(&c,1,4,6000,0);assert(sends==previous);
+    assert(ABoxTimeClient_Init(&c,"device",0,&port));
+    ABoxTimeClient_Poll(&c,1,1,0,0); char first[65]; strcpy(first,request_id);
+    assert(!strcmp(first,"ts-0000000000000001-1"));
+    snprintf(response,sizeof(response),"{\"version\":\"2.0\",\"timestamp\":0,\"data\":{\"requestId\":\"%s\",\"code\":200,\"result\":{\"serverUtcMs\":1,\"errorMs\":10}}}",request_id);
+    ABoxTimeClient_Message(&c,c.response_topic,response,strlen(response),1,1,20);
+    assert(c.sampling.pending); /* A matching but invalid reply does not cancel the request. */
+    ABoxTimeClient_Poll(&c,0,1,30,0);
+    ABoxTimeClient_Poll(&c,1,2,40,0); assert(c.sampling.sequence==2);
+    assert(ABoxTimeClient_SetDevice(&c,"device"));
+    ABoxTimeClient_Poll(&c,1,3,50,0); assert(c.sampling.sequence==3);
+    assert(ABoxTimeClient_Init(&c,"device",0,&port));
+    ABoxTimeClient_Poll(&c,1,1,0,0); assert(!strcmp(first,request_id));
     puts("PASS shared time wire adapter: authenticated generation, strict JSON and ID continuity");
     return 0;
 }

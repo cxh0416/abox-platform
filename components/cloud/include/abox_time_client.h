@@ -16,6 +16,8 @@ typedef struct {
     uint32_t generation;
     uint8_t ready;
 } ABoxTimeClient;
+/* Prefix is only for correlation, not freshness or authentication.
+ * Zero selects the shared default; IDs may repeat after device reset. */
 int ABoxTimeClient_Init(ABoxTimeClient *client, const char *device_id,
     uint64_t boot_seed, const ABoxTimeClientPort *port);
 int ABoxTimeClient_SetDevice(ABoxTimeClient *client, const char *device_id);

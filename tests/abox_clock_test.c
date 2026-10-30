@@ -16,6 +16,8 @@ int main(void)
     assert(ABoxMqttV4_FormatInteger(integer,sizeof(integer),0) && !strcmp(integer,"0"));
     ABoxClock_Init(&c);
     assert(ABoxClock_Snapshot(&c,0).quality == ABOX_CLOCK_INVALID);
+    s = ABoxClock_Snapshot(&c,0); assert(ABoxClock_ReportedUtcMs(&s) == 0);
+    assert(ABoxClock_ReportedUtcMs(NULL) == 0);
     assert(ABoxClock_ParseCCLK("+CCLK: \"26/09/30,08:00:00+32\"",1,&local));
     assert(ABoxClock_ParseCCLK("+CCLK: \"26/09/30,00:00:00+00\"",0,&utc));
     assert(local == utc);
@@ -28,12 +30,15 @@ int main(void)
     assert(!ABoxClock_ParseCCLK("+CCLK: \"26/09/30,00:00:00\"",0,&utc));
     assert(ABoxClock_Bootstrap(&c,t,100));
     assert(ABoxClock_Snapshot(&c,200).quality == ABOX_CLOCK_BOOTSTRAP);
+    s = ABoxClock_Snapshot(&c,200); assert(ABoxClock_ReportedUtcMs(&s) == 0);
     assert(!ABoxClock_Synchronize(&c,t,50,0,401));
     assert(ABoxClock_Synchronize(&c,t,50,100,300));
     s = ABoxClock_Snapshot(&c,300);
     assert(s.utc_ms == t+100 && s.error_ms == 151 && s.quality == ABOX_CLOCK_SYNCHRONIZED);
+    assert(ABoxClock_ReportedUtcMs(&s) == t+100);
     assert(!ABoxClock_Bootstrap(&c,t+99999,400));
     assert(ABoxClock_Snapshot(&c,4000000).quality == ABOX_CLOCK_UNTRUSTED);
+    s = ABoxClock_Snapshot(&c,4000000); assert(ABoxClock_ReportedUtcMs(&s) == 0);
     assert(ABoxClock_Snapshot(&c,5000000000ULL).utc_ms > t+4000000000ULL);
     assert(ABoxClock_Synchronize(&c,t+150,10,300,500));
     s = ABoxClock_Snapshot(&c,500);

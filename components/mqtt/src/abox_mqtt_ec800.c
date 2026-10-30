@@ -7,7 +7,7 @@
 enum { CMD_NONE, CMD_OK, CMD_FAILED };
 enum { URC_NONE, URC_OK, URC_FAILED };
 enum { URC_DRAIN_MS = 1500U };
-enum { CFG_ECHO, CFG_RECV, CFG_VERSION, CFG_PDPCID, CFG_REG, CFG_ATTACH_QUERY, CFG_ATTACH,
+enum { CFG_ECHO, CFG_RECV, CFG_VERSION, CFG_PDPCID, CFG_SESSION, CFG_REG, CFG_ATTACH_QUERY, CFG_ATTACH,
        CFG_PDP_QUERY, CFG_APN, CFG_PDP_ACTIVATE, CFG_PDP_VERIFY, CFG_DONE };
 
 static void change(ABoxMqttEc800 *m, ABoxMqttEc800State state, uint32_t now)
@@ -260,7 +260,7 @@ static int valid_config(const ABoxMqttEc800Config *c, uint8_t endpoint)
         !c->connect_timeout_ms || !c->subscribe_timeout_ms ||
         !c->publish_timeout_ms || !c->retry_delay_ms ||
         c->subscription_count > 8U || c->legacy_json > 1U ||
-        c->mqtt_version > 4U || c->pdp_context_id > 16U ||
+        c->mqtt_version > 4U || c->pdp_context_id > 16U || c->clean_session > 1U ||
         (c->subscription_count && !c->subscriptions) ||
         (c->apn && !valid_text(c->apn, 64U)) ||
         (c->username && *c->username && !valid_text(c->username, 32U)) ||
@@ -360,6 +360,10 @@ static void configure(ABoxMqttEc800 *m, uint32_t now)
             if (!m->config.pdp_context_id) { ++m->step; m->entered_ms = now; return; }
             snprintf(command, sizeof(command), "AT+QMTCFG=\"pdpcid\",%u,%u",
                      m->config.client_index, m->config.pdp_context_id); break;
+        case CFG_SESSION:
+            if (!m->config.clean_session) { ++m->step; m->entered_ms = now; return; }
+            snprintf(command, sizeof(command), "AT+QMTCFG=\"session\",%u,1",
+                     m->config.client_index); break;
         case CFG_REG: strcpy(command, "AT+CEREG?"); m->registered = 0U; break;
         case CFG_ATTACH_QUERY: strcpy(command, "AT+CGATT?"); m->attached = 0U; break;
         case CFG_ATTACH: strcpy(command, "AT+CGATT=1"); break;

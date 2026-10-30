@@ -10,7 +10,7 @@ void ABoxTimeSync_Poll(ABoxTimeSync *s, const ABoxTimeSyncPort *p,
     if (!ready) { s->ready = s->pending = s->attempts = s->have_best = 0; return; }
     if (!s->ready) {
         s->ready = 1; s->next_due = now;
-        if (!s->seed) s->seed = seed;
+        if (!s->seed) s->seed = seed ? seed : 1U;
     }
     if (s->pending) {
         if (now - s->sent < 5000U) return;
@@ -50,11 +50,11 @@ int ABoxTimeSync_Response(ABoxTimeSync *s, const char *id, uint64_t utc,
 {
     uint64_t rtt, candidate, previous, difference;
     if (!s || !id || !s->pending || strcmp(id,s->request_id)) return 0;
-    s->pending = 0; s->next_due = received + 1000U;
     if (received < s->sent || utc < ABOX_CLOCK_MIN_UTC_MS || utc >= ABOX_CLOCK_MAX_UTC_MS ||
         error > ABOX_CLOCK_MAX_REFERENCE_ERROR_MS) return 0;
     rtt = received - s->sent;
     if (rtt > ABOX_CLOCK_MAX_RTT_MS) return 0;
+    s->pending = 0; s->next_due = received + 1000U;
     if (s->have_best) {
         candidate = utc + rtt / 2U;
         previous = s->best_utc + s->best_rtt / 2U + received - s->best_received;

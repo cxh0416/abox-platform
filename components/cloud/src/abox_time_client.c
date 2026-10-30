@@ -30,8 +30,8 @@ int ABoxTimeClient_Init(ABoxTimeClient *c, const char *id, uint64_t seed, const 
 {
     if (!c) return 0;
     memset(c,0,sizeof(*c));
-    if (!p || !p->send || !p->apply || !seed) return 0;
-    c->port=*p; c->seed=seed;
+    if (!p || !p->send || !p->apply) return 0;
+    c->port=*p; c->seed=seed ? seed : 1U;
     if (!ABoxTimeClient_SetDevice(c,id)) { memset(c,0,sizeof(*c)); return 0; }
     return 1;
 }

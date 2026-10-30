@@ -40,6 +40,8 @@ typedef struct {
     uint8_t legacy_json;
     /* Zero leaves the modem setting unchanged. */
     uint8_t mqtt_version, pdp_context_id;
+    /* Zero preserves the modem setting; one explicitly requests a clean session. */
+    uint8_t clean_session;
 } ABoxMqttEc800Config;
 
 typedef struct {

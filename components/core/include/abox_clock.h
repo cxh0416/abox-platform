@@ -28,6 +28,8 @@ typedef struct {
 
 void ABoxClock_Init(ABoxClock *clock);
 ABoxClockSnapshot ABoxClock_Snapshot(const ABoxClock *clock, uint64_t mono_ms);
+/* Unknown, bootstrap and expired time must not be advertised as trusted UTC. */
+uint64_t ABoxClock_ReportedUtcMs(const ABoxClockSnapshot *snapshot);
 int ABoxClock_Bootstrap(ABoxClock *clock, uint64_t utc_ms, uint64_t mono_ms);
 /* server UTC is sampled immediately before publishing its response. The full
  * client round trip includes all queue/processing delay, conservatively. */

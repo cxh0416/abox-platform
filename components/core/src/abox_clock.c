@@ -10,6 +10,8 @@ static int days(int y, int m)
     return d[m - 1] + (m == 2 && leap(y));
 }
 void ABoxClock_Init(ABoxClock *c) { if (c) memset(c, 0, sizeof(*c)); }
+uint64_t ABoxClock_ReportedUtcMs(const ABoxClockSnapshot *s)
+{ return s && s->quality == ABOX_CLOCK_SYNCHRONIZED ? s->utc_ms : 0U; }
 ABoxClockSnapshot ABoxClock_Snapshot(const ABoxClock *c, uint64_t mono)
 {
     ABoxClockSnapshot s = {0};
