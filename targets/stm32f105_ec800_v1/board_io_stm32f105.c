@@ -10,10 +10,20 @@ typedef struct {
 static const BoardPin outputs[ABOX_BOARD_IO_OUTPUT_COUNT] = {
     {GPIOA, GPIO_PIN_0}, {GPIOA, GPIO_PIN_1}, {GPIOA, GPIO_PIN_2}, {GPIOC, GPIO_PIN_4}
 };
-static const BoardPin inputs[ABOX_BOARD_IO_INPUT_COUNT] = {
+#if ABOX_BOARD_VERSION == ABOX_BOARD_VERSION_V1
+static const BoardPin inputs[] = {
+    {GPIOA, GPIO_PIN_4}, {GPIOA, GPIO_PIN_5},
+    {GPIOA, GPIO_PIN_6}, {GPIOA, GPIO_PIN_7}
+};
+#define FIRST_INPUT_TERMINAL ABOX_BOARD_TERMINAL_B8
+#else
+static const BoardPin inputs[] = {
     {GPIOC, GPIO_PIN_3}, {GPIOC, GPIO_PIN_2}, {GPIOC, GPIO_PIN_1}, {GPIOC, GPIO_PIN_0},
     {GPIOA, GPIO_PIN_7}, {GPIOA, GPIO_PIN_6}, {GPIOA, GPIO_PIN_5}, {GPIOA, GPIO_PIN_4}
 };
+#define FIRST_INPUT_TERMINAL ABOX_BOARD_TERMINAL_B4
+#endif
+#define INPUT_COUNT (sizeof(inputs) / sizeof(inputs[0]))
 static const BoardPin leds[ABOX_BOARD_IO_LED_COUNT] = {
     {GPIOB, GPIO_PIN_0}, {GPIOB, GPIO_PIN_1}, {GPIOB, GPIO_PIN_2}
 };
@@ -39,12 +49,30 @@ void ABoxBoardIoStm32_SafeInit(void)
     config.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2;
     HAL_GPIO_Init(GPIOB, &config);
 
+    ABoxBoardIoStm32_InputsInit();
+}
+
+void ABoxBoardIoStm32_InputsInit(void)
+{
+    GPIO_InitTypeDef config = {0};
+    __HAL_RCC_GPIOA_CLK_ENABLE();
     config.Mode = GPIO_MODE_INPUT;
     config.Pull = GPIO_NOPULL;
-    config.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3;
-    HAL_GPIO_Init(GPIOC, &config);
     config.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
     HAL_GPIO_Init(GPIOA, &config);
+#if ABOX_BOARD_VERSION == ABOX_BOARD_VERSION_V2
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    config.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3;
+    HAL_GPIO_Init(GPIOC, &config);
+#endif
+}
+
+int ABoxBoardIoStm32_ReadTerminal(ABoxBoardTerminal terminal, uint8_t *level)
+{
+    unsigned index = (unsigned)terminal - FIRST_INPUT_TERMINAL;
+    if (index >= INPUT_COUNT || !level) return 0;
+    *level = HAL_GPIO_ReadPin(inputs[index].gpio, inputs[index].pin) == GPIO_PIN_SET ? 1U : 0U;
+    return 1;
 }
 
 static int prepare(void *context)
@@ -89,9 +117,9 @@ static int read_output(void *context, ABoxBoardIoOutput output, uint8_t *level)
 static int read_input(void *context, ABoxBoardIoInput input, uint8_t *level)
 {
     (void)context;
-    if ((unsigned)input >= ABOX_BOARD_IO_INPUT_COUNT || !level) return 0;
-    *level = HAL_GPIO_ReadPin(inputs[input].gpio, inputs[input].pin) == GPIO_PIN_SET ? 1U : 0U;
-    return 1;
+    if ((unsigned)input >= INPUT_COUNT) return 0;
+    return ABoxBoardIoStm32_ReadTerminal(
+        (ABoxBoardTerminal)(FIRST_INPUT_TERMINAL + (unsigned)input), level);
 }
 
 static int write_led(void *context, ABoxBoardIoLed led, uint8_t level)

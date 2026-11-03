@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def configure(name: str, arguments: str, success: bool, diagnostic: str = "",
               inspect_build: bool = False, extra: str = "",
-              attach_function: str = "abox_platform_attach_components") -> None:
+              attach_function: str = "abox_platform_attach_components", board: str = "") -> None:
     with tempfile.TemporaryDirectory(prefix=f"cmake-{name}-", dir=ROOT / "build") as folder:
         source = Path(folder)
         config = source / "config"
@@ -27,8 +27,11 @@ def configure(name: str, arguments: str, success: bool, diagnostic: str = "",
             f"{attach_function}(consumer {arguments})\n"
             f"{extra}\n",
             encoding="utf-8")
-        result = subprocess.run(["cmake", "-S", str(source), "-B", str(source / "build"),
-                                 "-G", "Ninja", "-DBUILD_TESTING=OFF"],
+        command = ["cmake", "-S", str(source), "-B", str(source / "build"),
+                   "-G", "Ninja", "-DBUILD_TESTING=OFF"]
+        if board:
+            command.append(f"-DABOX_BOARD_VERSION={board}")
+        result = subprocess.run(command,
                                 capture_output=True, text=True)
         output = result.stdout + result.stderr
         assert (result.returncode == 0) == success, f"{name}: {output}"
@@ -59,6 +62,16 @@ def main() -> None:
               "host target and REGISTRY are required",
               extra=f'abox_platform_verify_registry(missing REGISTRY "{registry_path}")')
     configure("hardware", "SCHEDULER BAREMETAL HARDWARE stm32f105_ec800_v1 COMPONENTS core", True)
+    for board, expected in (("v1", 1), ("v2", 2)):
+        configure(f"hardware-{board}",
+                  "SCHEDULER BAREMETAL HARDWARE stm32f105_ec800_v1 COMPONENTS core", True,
+                  board=board, extra=f'''get_target_property(definitions consumer COMPILE_DEFINITIONS)
+if(NOT "ABOX_BOARD_VERSION={expected}" IN_LIST definitions)
+  message(FATAL_ERROR "board version definition missing")
+endif()''')
+    configure("hardware-invalid-board",
+              "SCHEDULER BAREMETAL HARDWARE stm32f105_ec800_v1 COMPONENTS core", False,
+              "ABOX_BOARD_VERSION must be v1 or v2", board="v3")
     configure("standard-port", "SCHEDULER BAREMETAL HARDWARE stm32f105_ec800_v1 COMPONENTS core ec_power", True,
               extra="abox_platform_attach_standard_port(consumer HARDWARE stm32f105_ec800_v1)")
     configure("standard-app", "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} SCHEDULER BAREMETAL", True,
