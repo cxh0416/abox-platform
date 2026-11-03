@@ -179,7 +179,7 @@ static void begin_verify(ABoxHttpsUfsDownloader *d)
     if (!submit(d, command, 5000U)) finish_failure(d, ABOX_HTTPS_UFS_ERROR_UFS);
 }
 
-static void succeeded(ABoxHttpsUfsDownloader *d)
+static void succeeded_config(ABoxHttpsUfsDownloader *d)
 {
     char command[160];
     switch (d->state) {
@@ -265,6 +265,14 @@ static void succeeded(ABoxHttpsUfsDownloader *d)
                        d->request.file);
         if (!submit(d, command, 5000U)) finish_failure(d, ABOX_HTTPS_UFS_ERROR_UFS);
         break;
+    default: break;
+    }
+}
+
+static void succeeded_direct(ABoxHttpsUfsDownloader *d)
+{
+    char command[160];
+    switch (d->state) {
     case ST_FILE_DELETE:
         if (d->metrics.backend == ABOX_HTTPS_UFS_BACKEND_DIRECT) {
             d->state = ST_DIRECT_GET;
@@ -295,6 +303,14 @@ static void succeeded(ABoxHttpsUfsDownloader *d)
         d->metrics.ufs_store_ms += now(d) - d->store_started_at;
         begin_verify(d);
         break;
+    default: break;
+    }
+}
+
+static void succeeded_range(ABoxHttpsUfsDownloader *d)
+{
+    char command[160];
+    switch (d->state) {
     case ST_RANGE_OPEN:
         if (!d->handle_valid) finish_failure(d, ABOX_HTTPS_UFS_ERROR_UFS);
         else d->state = ST_RANGE_GET;
@@ -339,6 +355,14 @@ static void succeeded(ABoxHttpsUfsDownloader *d)
         d->handle_valid = 0U;
         begin_verify(d);
         break;
+    default: break;
+    }
+}
+
+static void succeeded_verify(ABoxHttpsUfsDownloader *d)
+{
+    char command[160];
+    switch (d->state) {
     case ST_FILE_LIST:
         if (!d->file_seen || d->file_size != d->request.size) {
             fallback_or_fail(d, ABOX_HTTPS_UFS_ERROR_SIZE, ABOX_HTTPS_UFS_FALLBACK_INTEGRITY);
@@ -371,9 +395,16 @@ static void succeeded(ABoxHttpsUfsDownloader *d)
         d->handle_valid = 0U;
         d->state = ST_VERIFY;
         break;
-    default:
-        break;
+    default: break;
     }
+}
+
+static void succeeded(ABoxHttpsUfsDownloader *d)
+{
+    if (d->state >= ST_HTTP_STOP && d->state <= ST_URL) succeeded_config(d);
+    else if (d->state >= ST_FILE_DELETE && d->state <= ST_DIRECT_STORE) succeeded_direct(d);
+    else if (d->state >= ST_RANGE_OPEN && d->state <= ST_RANGE_CLOSE) succeeded_range(d);
+    else if (d->state >= ST_FILE_LIST && d->state <= ST_VERIFY_CLOSE) succeeded_verify(d);
 }
 
 static void command_done(ABoxHttpsUfsAtResult result, void *user)

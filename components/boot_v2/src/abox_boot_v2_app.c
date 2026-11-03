@@ -24,20 +24,8 @@ typedef enum {
     ST_MQTT_DISC,
     ST_MQTT_CLOSE,
     ST_DOWNLOADER,
-    ST_HTTP_STOP,
-    ST_PDP_DEACT,
-    ST_PDP_ACT,
-    ST_TLS_VERSION,
-    ST_TLS_LEVEL,
-    ST_TLS_SNI,
-    ST_TLS_CA,
-    ST_HTTP_CONTEXT,
-    ST_HTTP_TLS,
-    ST_URL,
     ST_FILE_DELETE,
     ST_FILE_OPEN,
-    ST_RANGE_GET,
-    ST_HTTP_READ,
     ST_FILE_WRITE,
     ST_FILE_CLOSE,
     ST_FILE_LIST,
@@ -75,13 +63,10 @@ typedef struct {
     uint32_t expected_crc;
     uint32_t downloaded;
     uint32_t chunk_size;
-    uint32_t chunk_received;
     uint32_t read_size;
     uint32_t crc;
     uint32_t ca_read_size;
     uint32_t ca_crc;
-    uint32_t http_status;
-    uint32_t http_length;
     uint32_t written;
     uint32_t written_total;
     uint32_t file_size;
@@ -197,20 +182,8 @@ static const char *download_stage(void)
     case ST_MQTT_DISC: return "MQTT_DISC";
     case ST_MQTT_CLOSE: return "MQTT_CLOSE";
     case ST_DOWNLOADER: return ABoxHttpsUfs_Phase(&g.downloader);
-    case ST_HTTP_STOP: return "HTTP_STOP";
-    case ST_PDP_DEACT: return "PDP_DEACT";
-    case ST_PDP_ACT: return "PDP_ACT";
-    case ST_TLS_VERSION: return "TLS_VERSION";
-    case ST_TLS_LEVEL: return "TLS_LEVEL";
-    case ST_TLS_SNI: return "TLS_SNI";
-    case ST_TLS_CA: return "TLS_CA";
-    case ST_HTTP_CONTEXT: return "HTTP_CONTEXT";
-    case ST_HTTP_TLS: return "HTTP_TLS";
-    case ST_URL: return "URL";
     case ST_FILE_DELETE: return "FILE_DELETE";
     case ST_FILE_OPEN: return "FILE_OPEN";
-    case ST_RANGE_GET: return "RANGE_GET";
-    case ST_HTTP_READ: return "HTTP_READ";
     case ST_FILE_WRITE: return "FILE_WRITE";
     case ST_FILE_CLOSE: return "FILE_CLOSE";
     case ST_FILE_LIST: return "FILE_LIST";
@@ -567,10 +540,9 @@ static void start_common_downloader(void)
         download_fail(ABOX_BOOT_V2_APP_ERROR_UFS);
 }
 
-static void command_succeeded(void)
+static void provision_succeeded(void)
 {
     char command[128];
-
     switch (g.state) {
     case ST_PROBE:
         if (++g.probe_index < (uint8_t)(sizeof(probes) / sizeof(probes[0])))
@@ -644,6 +616,14 @@ static void command_succeeded(void)
         g.state = ST_CA_OPEN;
         (void)submit_command("AT+QFOPEN=\"ota_ca.pem\",2", 5000U);
         break;
+    default: break;
+    }
+}
+
+static void seed_succeeded(void)
+{
+    char command[128];
+    switch (g.state) {
     case ST_MQTT_DISC:
         g.state = ST_MQTT_CLOSE;
         (void)snprintf(command, sizeof(command), "AT+QMTCLOSE=%u",
@@ -659,41 +639,6 @@ static void command_succeeded(void)
         } else {
             start_common_downloader();
         }
-        break;
-    case ST_HTTP_STOP:
-        g.state = ST_PDP_DEACT;
-        (void)submit_command("AT+QIDEACT=1", 40000U);
-        break;
-    case ST_PDP_DEACT:
-        g.state = ST_PDP_ACT;
-        (void)submit_command("AT+QIACT=1", 150000U);
-        break;
-    case ST_PDP_ACT:
-        g.state = ST_TLS_VERSION;
-        (void)submit_command("AT+QSSLCFG=\"sslversion\",1,3", 5000U);
-        break;
-    case ST_TLS_VERSION:
-        g.state = ST_TLS_LEVEL;
-        break;
-    case ST_TLS_LEVEL:
-        g.state = ST_TLS_SNI;
-        break;
-    case ST_TLS_SNI:
-        g.state = ST_TLS_CA;
-        break;
-    case ST_TLS_CA:
-        g.state = ST_HTTP_CONTEXT;
-        break;
-    case ST_HTTP_CONTEXT:
-        g.state = ST_HTTP_TLS;
-        break;
-    case ST_HTTP_TLS:
-        g.state = ST_URL;
-        break;
-    case ST_URL:
-        g.state = ST_FILE_DELETE;
-        (void)snprintf(command, sizeof(command), "AT+QFDEL=\"%s\"", slot_name(g.slot));
-        (void)submit_command(command, 5000U);
         break;
     case ST_FILE_DELETE:
         g.state = ST_FILE_OPEN;
@@ -712,26 +657,7 @@ static void command_succeeded(void)
                            (unsigned long)g.handle, (unsigned long)g.chunk_size);
             (void)submit_command(command, 15000U);
         } else
-            g.state = ST_RANGE_GET;
-        break;
-    case ST_RANGE_GET:
-        if (g.http_status != 206U || g.http_length != g.chunk_size)
-            download_fail(ABOX_BOOT_V2_APP_ERROR_HTTP);
-        else {
-            g.chunk_received = 0U;
-            g.state = ST_HTTP_READ;
-            (void)submit_command("AT+QHTTPREAD=80", 90000U);
-        }
-        break;
-    case ST_HTTP_READ:
-        if (g.chunk_received != g.chunk_size)
-            download_fail(ABOX_BOOT_V2_APP_ERROR_SIZE);
-        else {
-            g.state = ST_FILE_WRITE;
-            (void)snprintf(command, sizeof(command), "AT+QFWRITE=%lu,%lu,10",
-                           (unsigned long)g.handle, (unsigned long)g.chunk_size);
-            (void)submit_command(command, 15000U);
-        }
+            download_fail(ABOX_BOOT_V2_APP_ERROR_STATE);
         break;
     case ST_FILE_WRITE:
         if (g.written != g.chunk_size || g.written_total != g.downloaded + g.chunk_size)
@@ -754,7 +680,7 @@ static void command_succeeded(void)
                                    (unsigned long)g.chunk_size);
                     (void)submit_command(command, 15000U);
                 } else {
-                    g.state = ST_RANGE_GET;
+                    download_fail(ABOX_BOOT_V2_APP_ERROR_STATE);
                 }
             }
         }
@@ -765,6 +691,14 @@ static void command_succeeded(void)
         (void)snprintf(command, sizeof(command), "AT+QFLST=\"%s\"", slot_name(g.slot));
         (void)submit_command(command, 5000U);
         break;
+    default: break;
+    }
+}
+
+static void verify_succeeded(void)
+{
+    char command[128];
+    switch (g.state) {
     case ST_FILE_LIST:
         if (!g.file_seen || g.file_size != g.expected_size)
             download_fail(ABOX_BOOT_V2_APP_ERROR_SIZE);
@@ -792,9 +726,15 @@ static void command_succeeded(void)
         g.handle_valid = 0U;
         g.state = ST_VERIFY;
         break;
-    default:
-        break;
+    default: break;
     }
+}
+
+static void command_succeeded(void)
+{
+    if (provision_state(g.state)) provision_succeeded();
+    else if (g.state >= ST_MQTT_DISC && g.state <= ST_FILE_CLOSE) seed_succeeded();
+    else if (g.state >= ST_FILE_LIST && g.state <= ST_VERIFY_CLOSE) verify_succeeded();
 }
 
 static void command_done(ABoxBootV2AtResult result, void *user)
@@ -850,7 +790,7 @@ static void command_done(ABoxBootV2AtResult result, void *user)
         provision_fail(ABOX_BOOT_V2_APP_ERROR_CA);
         return;
     }
-    if ((g.state == ST_FILE_DELETE || g.state == ST_HTTP_STOP) &&
+    if (g.state == ST_FILE_DELETE &&
         result == ABOX_BOOT_V2_AT_ERROR) {
         command_succeeded();
         return;
@@ -885,14 +825,6 @@ static void event_received(ABoxBootV2AtEvent event, const uint8_t *data,
             }
             g.ca_crc = crc_update(g.ca_crc, data, length);
             g.ca_read_size += length;
-        } else if (g.state == ST_HTTP_READ) {
-            if (g.chunk_received + length > g.chunk_size ||
-                g.chunk_received + length > g.port.transfer_buffer_size) {
-                download_fail(ABOX_BOOT_V2_APP_ERROR_SIZE);
-                return;
-            }
-            memcpy(g.port.transfer_buffer + g.chunk_received, data, length);
-            g.chunk_received += length;
         } else if (g.state == ST_VERIFY_READ) {
             uint16_t copy = length;
             if (g.read_size + length > g.expected_size) {
@@ -928,15 +860,6 @@ static void event_received(ABoxBootV2AtEvent event, const uint8_t *data,
             g.handle = (uint32_t)handle;
             g.handle_valid = 1U;
         }
-    } else if (strncmp(line, "+QHTTPGET:", 10U) == 0) {
-        unsigned long result;
-        unsigned long status;
-        unsigned long response_length;
-        if (sscanf(line, "+QHTTPGET: %lu,%lu,%lu", &result, &status, &response_length) == 3 &&
-            result == 0U) {
-            g.http_status = (uint32_t)status;
-            g.http_length = (uint32_t)response_length;
-        }
     } else if (strncmp(line, "+QFWRITE:", 9U) == 0) {
         unsigned long written;
         unsigned long total;
@@ -969,10 +892,6 @@ static void event_received(ABoxBootV2AtEvent event, const uint8_t *data,
             else
                 download_fail(ABOX_BOOT_V2_APP_ERROR_UFS);
         }
-    } else if (strcmp(line, "CONNECT") == 0 && g.state == ST_HTTP_READ) {
-        if (!g.port.begin_raw_read ||
-            !g.port.begin_raw_read(g.port.context, g.chunk_size))
-            download_fail(ABOX_BOOT_V2_APP_ERROR_UFS);
     }
 }
 
@@ -1172,11 +1091,6 @@ void ABoxBootV2App_Task(void)
                 g.port.context, g.cfg.ca_pem, (uint16_t)g.cfg.ca_pem_length);
             return;
         }
-        if (g.state == ST_URL) {
-            g.payload_sent = (uint8_t)g.port.send_payload(
-                g.port.context, (const uint8_t *)g.url, (uint16_t)strlen(g.url));
-            return;
-        }
         if (g.state == ST_FILE_WRITE) {
             const uint8_t *payload = g.port.transfer_buffer;
             if (g.seeding &&
@@ -1194,36 +1108,6 @@ void ABoxBootV2App_Task(void)
     if (g.port.has_pending && g.port.has_pending(g.port.context)) return;
 
     switch (g.state) {
-    case ST_TLS_LEVEL:
-        (void)submit_command("AT+QSSLCFG=\"seclevel\",1,1", 5000U);
-        break;
-    case ST_TLS_SNI:
-        (void)submit_command("AT+QSSLCFG=\"sni\",1,1", 5000U);
-        break;
-    case ST_TLS_CA:
-        (void)submit_command("AT+QSSLCFG=\"cacert\",1,\"UFS:ota_ca.pem\"", 5000U);
-        break;
-    case ST_HTTP_CONTEXT:
-        (void)submit_command("AT+QHTTPCFG=\"contextid\",1", 5000U);
-        break;
-    case ST_HTTP_TLS:
-        (void)submit_command("AT+QHTTPCFG=\"sslctxid\",1", 5000U);
-        break;
-    case ST_URL:
-        (void)snprintf(command, sizeof(command), "AT+QHTTPURL=%u,80",
-                       (unsigned)strlen(g.url));
-        (void)submit_command(command, 10000U);
-        break;
-    case ST_RANGE_GET:
-        g.chunk_size = g.expected_size - g.downloaded;
-        if (g.chunk_size > ABOX_BOOT_V2_APP_RAW_CHUNK)
-            g.chunk_size = ABOX_BOOT_V2_APP_RAW_CHUNK;
-        g.http_status = 0U;
-        g.http_length = 0U;
-        (void)snprintf(command, sizeof(command), "AT+QHTTPGETEX=80,%lu,%lu",
-                       (unsigned long)g.downloaded, (unsigned long)g.chunk_size);
-        (void)submit_command(command, 90000U);
-        break;
     case ST_VERIFY_READ: {
         uint32_t length = g.expected_size - g.read_size;
         if (length > ABOX_BOOT_V2_APP_RAW_CHUNK) length = ABOX_BOOT_V2_APP_RAW_CHUNK;

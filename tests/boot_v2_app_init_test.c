@@ -171,8 +171,8 @@ int main(void)
         actual.mqtt_stop=stop_test; actual.workspace_borrow=borrow_test; actual.workspace_return=return_test;
         assert(ABoxBootV2App_Init(&actual,&config));
         g.busy=g.provisioned=g.workspace_borrowed=g.seed_attempted=1U;
-        g.state=ST_URL; strcpy(g.url,"https://ota.example/app.bin"); returns=0;
-        assert(actual.submit(actual.context,"AT+QHTTPURL=27,80",5000,command_done,NULL));
+        g.state=ST_FILE_WRITE; g.chunk_size=27U; returns=0;
+        assert(actual.submit(actual.context,"AT+QFWRITE=1,27,10",5000,command_done,NULL));
         ABoxEc800At_Task(&at); ABoxEc800At_Feed(&at,(const uint8_t *)"CONNECT\r\n",9);
         fail_write=1; ABoxBootV2App_Task(); fail_write=0;
         assert(at.quarantined && !ABoxBootV2App_IsBusy() && !adapter.done && returns==1);

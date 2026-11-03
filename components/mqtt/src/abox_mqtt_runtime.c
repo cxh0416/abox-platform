@@ -402,18 +402,8 @@ static void stop_poll(ABoxMqttRuntime *r, uint32_t now)
   }
   state(r, ABOX_MQTT_RUNTIME_STOP_UNBIND, "stop-unbind");
 }
-void ABoxMqttRuntime_Poll(ABoxMqttRuntime *r, uint32_t now) {
+static void ready_poll(ABoxMqttRuntime *r, uint32_t now) {
   ABoxAsyncStatus s;
-  if (r && r->initialized && r->callbacks.recovery_allowed &&
-      !r->callbacks.recovery_allowed(r->callbacks.user)) {
-    if (!r->safety_locked) ABoxMqttRuntime_Block(r);
-    return;
-  }
-  if (!r || !r->initialized ||
-      r->state == ABOX_MQTT_RUNTIME_FAILED ||
-      r->state == ABOX_MQTT_RUNTIME_UNENROLLED ||
-      r->state == ABOX_MQTT_RUNTIME_BLOCKED)
-    return;
   if (r->state == ABOX_MQTT_RUNTIME_READY) {
     /* Plain MQTT also carries timestamped V4 business messages. Query the
      * modem clock after connection; TLS already obtains it before binding.
@@ -439,30 +429,9 @@ void ABoxMqttRuntime_Poll(ABoxMqttRuntime *r, uint32_t now) {
     }
     return;
   }
-  if (r->state >= ABOX_MQTT_RUNTIME_STOP_WAIT_DRAIN &&
-      r->state <= ABOX_MQTT_RUNTIME_STOP_UNBIND) {
-    stop_poll(r, now);
-    return;
-  }
-  if (r->state == ABOX_MQTT_RUNTIME_DISCONNECT) {
-    disconnect(r, now);
-    return;
-  }
-  if (r->state == ABOX_MQTT_RUNTIME_UNBIND) {
-    ABoxMqttTls_Poll(&r->mqtt_tls, now);
-    s = r->mqtt_tls.status;
-    if (s == ABOX_ASYNC_PENDING)
-      return;
-    if (s != ABOX_ASYNC_OK || !ABoxEc800Tls_Release(&r->tls, r->lease)) {
-      fail(r, "unbind");
-      return;
-    }
-    memset(&r->lease, 0, sizeof(r->lease));
-    r->active_tls = 0;
-    if (!start(r, now))
-      fail(r, "post-unbind");
-    return;
-  }
+}
+
+static void connect_poll(ABoxMqttRuntime *r, uint32_t now) {
   if (r->state == ABOX_MQTT_RUNTIME_CONNECT) {
     r->callbacks.mqtt_task(r->callbacks.user);
     if (r->callbacks.mqtt_connected(r->callbacks.user)) {
@@ -488,6 +457,10 @@ void ABoxMqttRuntime_Poll(ABoxMqttRuntime *r, uint32_t now) {
     state(r, ABOX_MQTT_RUNTIME_CONNECT, "connect");
     return;
   }
+}
+
+static void prepare_poll(ABoxMqttRuntime *r, uint32_t now) {
+  ABoxAsyncStatus s;
   if (r->state == ABOX_MQTT_RUNTIME_WAIT_CA) {
     if (r->requested.tls_credentials.mode == ABOX_TLS_AUTH_CA &&
         !r->callbacks.ca_ready(r->callbacks.user))
@@ -580,6 +553,55 @@ void ABoxMqttRuntime_Poll(ABoxMqttRuntime *r, uint32_t now) {
     gate(r, 1);
     state(r, ABOX_MQTT_RUNTIME_PREPARED, "tls-prepared");
   }
+}
+
+void ABoxMqttRuntime_Poll(ABoxMqttRuntime *r, uint32_t now) {
+  ABoxAsyncStatus s;
+  if (r && r->initialized && r->callbacks.recovery_allowed &&
+      !r->callbacks.recovery_allowed(r->callbacks.user)) {
+    if (!r->safety_locked) ABoxMqttRuntime_Block(r);
+    return;
+  }
+  if (!r || !r->initialized ||
+      r->state == ABOX_MQTT_RUNTIME_FAILED ||
+      r->state == ABOX_MQTT_RUNTIME_UNENROLLED ||
+      r->state == ABOX_MQTT_RUNTIME_BLOCKED)
+    return;
+  if (r->state == ABOX_MQTT_RUNTIME_READY) {
+    ready_poll(r, now);
+    return;
+  }
+  if (r->state >= ABOX_MQTT_RUNTIME_STOP_WAIT_DRAIN &&
+      r->state <= ABOX_MQTT_RUNTIME_STOP_UNBIND) {
+    stop_poll(r, now);
+    return;
+  }
+  if (r->state == ABOX_MQTT_RUNTIME_DISCONNECT) {
+    disconnect(r, now);
+    return;
+  }
+  if (r->state == ABOX_MQTT_RUNTIME_UNBIND) {
+    ABoxMqttTls_Poll(&r->mqtt_tls, now);
+    s = r->mqtt_tls.status;
+    if (s == ABOX_ASYNC_PENDING)
+      return;
+    if (s != ABOX_ASYNC_OK || !ABoxEc800Tls_Release(&r->tls, r->lease)) {
+      fail(r, "unbind");
+      return;
+    }
+    memset(&r->lease, 0, sizeof(r->lease));
+    r->active_tls = 0;
+    if (!start(r, now))
+      fail(r, "post-unbind");
+    return;
+  }
+  if (r->state == ABOX_MQTT_RUNTIME_CONNECT ||
+      r->state == ABOX_MQTT_RUNTIME_CONNECTED ||
+      r->state == ABOX_MQTT_RUNTIME_PREPARED) {
+    connect_poll(r, now);
+    return;
+  }
+  prepare_poll(r, now);
 }
 void ABoxMqttRuntime_OnModemReset(ABoxMqttRuntime *r, uint32_t now) {
   uint8_t stopping;
