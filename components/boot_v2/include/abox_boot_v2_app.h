@@ -59,6 +59,9 @@ typedef struct {
     int (*mqtt_stop)(void *context, uint32_t now_ms);
     int (*workspace_borrow)(void *context);
     void (*workspace_return)(void *context);
+    /* Optional admission for starting a background local stable seed.
+     * In-flight operations are always allowed to finish. */
+    int (*may_start_seed)(void *context);
 } ABoxBootV2AppPort;
 
 typedef struct {

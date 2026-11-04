@@ -39,6 +39,8 @@ static uint32_t tick_now;
 static uint32_t flash_read_count;
 static int delegated_stop_result;
 static uint32_t delegated_stop_calls, delegated_borrows, delegated_returns;
+static int use_seed_gate, seed_allowed;
+static int may_start_seed(void *context) { (void)context; return seed_allowed; }
 
 static const uint8_t ca[] = "test-ca";
 static const ABoxBootV2Layout boot_layout = {
@@ -234,6 +236,7 @@ static void init_app(void)
         "abox-v2-", "abox-v2-current", ca, sizeof(ca) - 1U,
         0x08008000U, 128U, 0x36800U
     };
+    if (use_seed_gate) port.may_start_seed = may_start_seed;
     assert(ABoxBootV2App_Init(&port, &config));
 }
 
@@ -410,9 +413,14 @@ static void test_local_stable_seed_does_not_use_http(ABoxBootV2AtResult disconne
     memcpy(flash_mem + ABOX_BOOT_V2_DESCRIPTOR_ADDR - BASE,
            &descriptor, sizeof(descriptor));
     reset_transport();
+    use_seed_gate = 1; seed_allowed = 0;
     init_app();
     complete_probes();
     finish_existing_ca();
+    ABoxBootV2App_Task();
+    assert(!pending && !mqtt_paused && !ABoxBootV2App_IsBusy());
+    seed_allowed = 1;
+    use_seed_gate = 0;
     sent_payload_length = 0U;
     payload_count = 0U;
 

@@ -1072,6 +1072,7 @@ void ABoxBootV2App_Task(void)
     }
 
     if (g.provisioned && !g.busy && !g.seed_attempted && !g.stable_checked &&
+        (!g.port.may_start_seed || g.port.may_start_seed(g.port.context)) &&
         stable_slot_check_eligible()) {
         g.stable_checked = 1U;
         if (stable_slot_needs_seed()) {
