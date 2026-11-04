@@ -75,5 +75,29 @@ int main(void)
     query(&d, "AT+CEREG?", "\r\n+CEREG: 0,1\r\nOK\r\n");
     now += 60000U; ABoxEc800Diagnostics_Poll(&d, now, 0, 0, 0, 0);
     assert(!d.snapshot.valid && d.snapshot.state == ABOX_EC800_DIAG_UNKNOWN);
+    ABoxEc800Diagnostics_EnableFirmwareProbe(&d);
+    query(&d, "AT+QGMR", "\r\nEC800ECNLCR01A10M04\r\nOK\r\n");
+    assert(ABoxEc800Diagnostics_Firmware(&d) == ABOX_EC800_FIRMWARE_A10);
+    assert(!strcmp(ABoxEc800Firmware_Contract(ABoxEc800Diagnostics_Firmware(&d), "a10", "a18"), "a10"));
+    feed(&at, "\r\nRDY\r\n");
+    assert(ABoxEc800Diagnostics_Firmware(&d) == ABOX_EC800_FIRMWARE_UNKNOWN);
+    query(&d, "AT+QGMR", "\r\nEC800ECNLCR01A19M04\r\nOK\r\n");
+    assert(!ABoxEc800Firmware_Contract(ABoxEc800Diagnostics_Firmware(&d), "a10", "a18"));
+    query(&d, "AT+CMEE=1", "\r\nOK\r\n");
+    query(&d, "AT+CPIN?", "\r\n+CPIN: READY\r\nOK\r\n");
+    query(&d, "AT+CEREG?", "\r\n+CEREG: 0,1\r\nOK\r\n");
+    now += 15000U;
+    query(&d, "AT+QGMR", "\r\nEC800ECNLCR01A18M04\r\nOK\r\n");
+    assert(ABoxEc800Diagnostics_Firmware(&d) == ABOX_EC800_FIRMWARE_A18);
+    assert(!strcmp(ABoxEc800Firmware_Contract(ABoxEc800Diagnostics_Firmware(&d), "a10", "a18"), "a18"));
+    feed(&at, "\r\nRDY\r\n");
+    query(&d, "AT+QGMR", "\r\nEC800ECNLCR01A10M04\r\n");
+    now += ABOX_EC800_DIAG_QUERY_TIMEOUT_MS; ABoxEc800At_Task(&at);
+    assert(ABoxEc800Diagnostics_Firmware(&d) == ABOX_EC800_FIRMWARE_UNKNOWN);
+    /* Re-arm after timeout, then continue regular diagnostics. */
+    feed(&at, "\r\nOK\r\n");
+    query(&d, "AT+CMEE=1", "\r\nOK\r\n");
+    query(&d, "AT+CPIN?", "\r\n+CME ERROR: 10\r\n");
+    assert(d.snapshot.valid && d.snapshot.state == ABOX_EC800_DIAG_SIM_NOT_INSERTED);
     return 0;
 }

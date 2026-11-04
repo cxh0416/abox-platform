@@ -30,15 +30,20 @@ typedef struct {
     ABoxTlsCredentials credentials;
     /* Zero preserves the legacy RSA suite. Product MQTT may select ECDSA. */
     uint16_t ca_ciphersuite;
+    /* psk_sni: 0 leaves the context unchanged, 1 enables, 2 disables. */
+    uint8_t psk_a10, psk_sni;
 } ABoxTlsProfile;
 typedef struct {
     uint64_t generation, operation;
     uint32_t owner, revision, started, timeout;
     uint16_t pins;
     uint16_t ca_ciphersuite;
-    uint8_t step : 7;
+    /* TLS setup has at most nine steps; keep per-context flags compact. */
+    uint8_t step : 4;
     uint8_t auth_mode : 1;
-    uint8_t waiting;
+    uint8_t waiting : 1;
+    uint8_t psk_sni : 2;
+    uint8_t psk_a10 : 1;
     /* Only one authentication mode is prepared per lease. */
     union {
         char ca_file[ABOX_EC800_UFS_PATH_SIZE];

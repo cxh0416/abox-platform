@@ -104,6 +104,14 @@ static int start(ABoxMqttRuntime *r, uint32_t now) {
 static void prepare_tls(ABoxMqttRuntime *r, uint32_t now) {
   ABoxTlsProfile p = {0};
   p.credentials = r->requested.tls_credentials;
+  if (p.credentials.mode == ABOX_TLS_AUTH_PSK && r->options.firmware_diagnostics) {
+    ABoxEc800Firmware fw = ABoxEc800Diagnostics_Firmware(r->options.firmware_diagnostics);
+    if (fw == ABOX_EC800_FIRMWARE_UNKNOWN) return;
+    p.psk_a10 = fw == ABOX_EC800_FIRMWARE_A10;
+    p.psk_sni = p.psk_a10 && r->requested.host &&
+      !strchr(r->requested.host, ':') &&
+      strspn(r->requested.host, "0123456789.") != strlen(r->requested.host) ? 1U : 2U;
+  }
   if (p.credentials.mode == ABOX_TLS_AUTH_CA) {
     p.ca_file = r->options.ca_file;
     p.ca_revision = r->options.ca_revision;

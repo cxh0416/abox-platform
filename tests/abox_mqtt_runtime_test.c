@@ -424,6 +424,41 @@ int main(void)
         assert(!comm_runtime.lease.generation && !comm_runtime.blocked);
         assert(comm_runtime.state==ABOX_MQTT_RUNTIME_WAIT_CA);
     }
+    {
+        unsigned variant;
+        for (variant = 0; variant < 3; ++variant) {
+            Fixture fx = {0}; ABoxEc800At mod; ABoxMqttRuntime run;
+            ABoxEc800Diagnostics diag = {0};
+            ABoxMqttConfig secure = {variant == 1 ? "192.0.2.1" : "psk.example", 19684, "u", "p", 1, 0};
+            ABoxMqttRuntimeOptions opt = options;
+            unsigned i; int suite = 0, sni = 0, psk = 0;
+            secure.tls_credentials.mode = ABOX_TLS_AUTH_PSK;
+            secure.tls_credentials.generation = 1;
+            strcpy(secure.tls_credentials.identity, "fixture");
+            strcpy(secure.tls_credentials.secret, "abcdefghijklmnopqrstuvwxyz012345");
+            opt.firmware_diagnostics = &diag; at_port.context = &fx; port.user = &fx;
+            assert(ABoxEc800At_Init(&mod, &at_port));
+            assert(ABoxMqttRuntime_Init(&run, &mod, &port, &opt, &secure, 0));
+            ABoxMqttRuntime_Poll(&run, 1); ABoxEc800At_Task(&mod);
+            assert(!fx.writes && !run.lease.generation);
+            diag.firmware = variant == 2 ? ABOX_EC800_FIRMWARE_A18 : ABOX_EC800_FIRMWARE_A10;
+            for (i = 2; i < 60 && run.state != ABOX_MQTT_RUNTIME_CONNECT; ++i) {
+                fx.now = i; ABoxMqttRuntime_Poll(&run, i); ABoxEc800At_Task(&mod);
+                if (mod.active_valid) {
+                    if (strstr(fx.last_command, variant == 2 ? "0xCCAC" : "0x00AE")) suite = 1;
+                    if (strstr(fx.last_command, variant == 0 ? "\"sni\",2,1" : "\"sni\",2,0")) sni = 1;
+                    if (strstr(fx.last_command, variant == 2 ? "\"fixture\",\"abcdefghijklmnopqrstuvwxyz012345\"" :
+                               "\"6162636465666768696A6B6C6D6E6F707172737475767778797A303132333435\",\"fixture\"")) psk = 1;
+                    ABoxEc800At_Feed(&mod, (const uint8_t *)"OK\r\n", 4);
+                }
+            }
+            assert(suite && sni && psk && ABoxMqttRuntime_IsTlsActive(&run));
+            diag.firmware = ABOX_EC800_FIRMWARE_UNKNOWN;
+            ABoxMqttRuntime_OnModemReset(&run, i);
+            ABoxMqttRuntime_Poll(&run, i + 1); ABoxEc800At_Task(&mod);
+            assert(!run.lease.generation && run.state == ABOX_MQTT_RUNTIME_WAIT_CA);
+        }
+    }
     /* V4 rejects plaintext before any AT command, including restore paths. */
     ABoxEc800At v4_at; ABoxMqttRuntime v4_runtime; Fixture v4_fixture = {0};
     ABoxEc800AtPort v4_at_port = at_port; v4_at_port.context = &v4_fixture;

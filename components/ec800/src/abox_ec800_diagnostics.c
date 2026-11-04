@@ -6,8 +6,9 @@ void ABoxEc800Diagnostics_OnModemReset(ABoxEc800Diagnostics *d)
 {
     if (!d) return;
     d->pending = d->step = d->observed = d->sim = d->registration_valid = 0U;
-    d->step = 2U; /* Enable numeric CME once after each physical modem reset. */
-    d->due_ms = 0U;
+    d->firmware = d->firmware_candidate = ABOX_EC800_FIRMWARE_UNKNOWN;
+    d->step = d->firmware_probe_enabled ? 3U : 2U;
+    d->due_ms = d->firmware_due_ms = 0U;
     memset(&d->snapshot, 0, sizeof(d->snapshot));
 }
 static void line(ABoxEc800Event event, const uint8_t *data, uint16_t length, void *user)
@@ -21,7 +22,12 @@ static void line(ABoxEc800Event event, const uint8_t *data, uint16_t length, voi
         return;
     }
     if (!d->pending || !ABoxEc800At_IsActive(d->at, d->owner)) return;
-    if (!d->step && !strncmp(s, "+CPIN:", 6U)) {
+    if (d->step == 3U) {
+        if (!strcmp(s, "EC800ECNLCR01A10M04"))
+            d->firmware_candidate = ABOX_EC800_FIRMWARE_A10;
+        else if (!strcmp(s, "EC800ECNLCR01A18M04"))
+            d->firmware_candidate = ABOX_EC800_FIRMWARE_A18;
+    } else if (!d->step && !strncmp(s, "+CPIN:", 6U)) {
         s += 6; while (*s == ' ') ++s;
         if (!strcmp(s, "READY")) d->sim = ABOX_EC800_DIAG_SIM_READY;
         else if (!strcmp(s, "SIM PIN") || !strcmp(s, "SIM PUK"))
@@ -54,6 +60,14 @@ static void done(ABoxEc800Result result, void *user)
     ABoxEc800Diagnostics *d = user;
     uint32_t now = d->at->port.tick_ms(d->at->port.context);
     d->pending = 0U;
+    if (d->step == 3U) {
+        d->firmware = result == ABOX_EC800_RESULT_OK ? d->firmware_candidate : ABOX_EC800_FIRMWARE_UNKNOWN;
+        d->firmware_candidate = ABOX_EC800_FIRMWARE_UNKNOWN;
+        d->step = 2U;
+        d->firmware_due_ms = now + ABOX_EC800_DIAG_RETRY_MS;
+        d->due_ms = now;
+        return;
+    }
     d->snapshot.last_result = (uint8_t)result;
     d->snapshot.updated_at_ms = d->checked_at_ms = now;
     if (d->step == 2U && result != ABOX_EC800_RESULT_TIMEOUT) {
@@ -93,6 +107,16 @@ int ABoxEc800Diagnostics_Init(ABoxEc800Diagnostics *d, ABoxEc800At *at, ABoxEc80
     }
     return 1;
 }
+void ABoxEc800Diagnostics_EnableFirmwareProbe(ABoxEc800Diagnostics *d)
+{
+    if (!d || !d->at || d->pending) return;
+    d->firmware_probe_enabled = 1U;
+    ABoxEc800Diagnostics_OnModemReset(d);
+}
+ABoxEc800Firmware ABoxEc800Diagnostics_Firmware(const ABoxEc800Diagnostics *d)
+{
+    return d ? (ABoxEc800Firmware)d->firmware : ABOX_EC800_FIRMWARE_UNKNOWN;
+}
 void ABoxEc800Diagnostics_Poll(ABoxEc800Diagnostics *d, uint32_t now,
     uint8_t may_query, uint8_t attached, uint8_t pdp_active, uint8_t mqtt_ready)
 {
@@ -114,12 +138,15 @@ void ABoxEc800Diagnostics_Poll(ABoxEc800Diagnostics *d, uint32_t now,
     }
     if (!may_query || d->pending || ABoxEc800At_IsBusy(d->at) ||
         (d->due_ms && (int32_t)(now - d->due_ms) < 0)) return;
+    if (!d->step && d->firmware_probe_enabled &&
+        d->firmware == ABOX_EC800_FIRMWARE_UNKNOWN &&
+        (int32_t)(now - d->firmware_due_ms) >= 0) d->step = 3U;
     d->observed = 0U;
     if (!d->step) {
         d->sim = d->registration_valid = 0U;
         d->snapshot.last_cme = 0U;
     }
-    const char *command = d->step == 2U ? "AT+CMEE=1" : d->step == 1U ? "AT+CEREG?" : "AT+CPIN?";
+    const char *command = d->step == 3U ? "AT+QGMR" : d->step == 2U ? "AT+CMEE=1" : d->step == 1U ? "AT+CEREG?" : "AT+CPIN?";
     if (ABoxEc800At_Submit(d->at, command, d->owner,
         ABOX_EC800_PRIORITY_NORMAL, ABOX_EC800_DIAG_QUERY_TIMEOUT_MS, done, d)) d->pending = 1U;
 }

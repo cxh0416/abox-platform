@@ -42,7 +42,7 @@ int ABoxEc800Tls_Prepare(ABoxEc800Tls *t, ABoxTlsLease l,
                          const ABoxTlsProfile *p, uint32_t now, uint32_t timeout)
 {
     ABoxTlsSlot *s = slot(t, l);
-    if (!s || !p || !ABoxTlsCredentials_Valid(&p->credentials) ||
+    if (!s || !p || p->psk_a10 > 1U || p->psk_sni > 2U || !ABoxTlsCredentials_Valid(&p->credentials) ||
         (p->credentials.mode == ABOX_TLS_AUTH_CA &&
          (!p->ca_verified || !p->time_valid || !p->ca_revision ||
           !ABoxEc800Ufs_PathValid(p->ca_file) ||
@@ -50,6 +50,8 @@ int ABoxEc800Tls_Prepare(ABoxEc800Tls *t, ABoxTlsLease l,
         s->status != ABOX_ASYNC_IDLE || s->pins) return 0;
     s->auth_mode = p->credentials.mode;
     s->ca_ciphersuite = p->ca_ciphersuite ? p->ca_ciphersuite : 0x009C;
+    s->psk_a10 = p->psk_a10;
+    s->psk_sni = p->psk_sni;
     if (s->auth_mode == ABOX_TLS_AUTH_PSK) {
         memcpy(s->psk.identity, p->credentials.identity, sizeof(s->psk.identity));
         memcpy(s->psk.secret, p->credentials.secret, sizeof(s->psk.secret));
@@ -80,7 +82,7 @@ void ABoxEc800Tls_Poll(ABoxEc800Tls *t, uint32_t now)
             if (result == ABOX_ASYNC_PENDING) continue;
             if (result != ABOX_ASYNC_OK) { stop(t, s, ABOX_ASYNC_ERROR); continue; }
             s->waiting = 0;
-            if (++s->step == (s->auth_mode == ABOX_TLS_AUTH_PSK ? 5 : 9)) {
+            if (++s->step == (s->auth_mode == ABOX_TLS_AUTH_PSK ? (s->psk_sni ? 6 : 5) : 9)) {
                 if (s->auth_mode == ABOX_TLS_AUTH_PSK)
                     memset(s->psk.secret, 0, sizeof(s->psk.secret));
                 s->status = ABOX_ASYNC_OK; continue;
@@ -89,11 +91,32 @@ void ABoxEc800Tls_Poll(ABoxEc800Tls *t, uint32_t now)
         if (s->auth_mode == ABOX_TLS_AUTH_PSK) {
             switch (s->step) {
             case 0: snprintf(command, sizeof(command), "AT+QSSLCFG=\"sslversion\",%u,3", id); break;
-            case 1: snprintf(command, sizeof(command), "AT+QSSLCFG=\"ciphersuite\",%u,0xCCAC", id); break;
+            case 1: snprintf(command, sizeof(command), "AT+QSSLCFG=\"ciphersuite\",%u,0x%04X", id,
+                             s->psk_a10 ? 0x00AE : 0xCCAC); break;
             case 2: snprintf(command, sizeof(command), "AT+QSSLCFG=\"seclevel\",%u,0", id); break;
             case 3: snprintf(command, sizeof(command), "AT+QSSLCFG=\"session_cache\",%u,0", id); break;
-            default: snprintf(command, sizeof(command), "AT+QSSLCFG=\"psk\",%u,\"%s\",\"%.32s\"", id,
-                              s->psk.identity, s->psk.secret); break;
+            default:
+            if (s->psk_sni && s->step == 4U) {
+                snprintf(command, sizeof(command), "AT+QSSLCFG=\"sni\",%u,%u", id,
+                         s->psk_sni == 1U ? 1U : 0U);
+            } else if (s->psk_a10) {
+                static const char hex[] = "0123456789ABCDEF";
+                char encoded[65];
+                unsigned i;
+                for (i = 0; i < 32U; ++i) {
+                    uint8_t byte = (uint8_t)s->psk.secret[i];
+                    encoded[2U * i] = hex[byte >> 4];
+                    encoded[2U * i + 1U] = hex[byte & 15U];
+                }
+                encoded[64] = '\0';
+                snprintf(command, sizeof(command), "AT+QSSLCFG=\"psk\",%u,\"%s\",\"%s\"", id,
+                         encoded, s->psk.identity);
+                memset(encoded, 0, sizeof(encoded));
+            } else {
+                snprintf(command, sizeof(command), "AT+QSSLCFG=\"psk\",%u,\"%s\",\"%.32s\"", id,
+                         s->psk.identity, s->psk.secret); break;
+            }
+            break;
             }
         } else {
         switch (s->step) {

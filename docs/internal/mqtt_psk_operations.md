@@ -1,15 +1,19 @@
 # ABox MQTT ECDHE-PSK 运维（内部）
 
+内部资料，不作为业务对接协议对外交付。
+
 普通固件同时保留 CA、PSK 和显式明文配置；生产端口与车辆配置须另行批准。
-EC800E 固件固定，PSK 路径使用 TLS 1.2 / `0xCCAC`
-(`ECDHE-PSK-CHACHA20-POLY1305`)，仅允许这一套件。`seclevel=0` 在此路径
+默认 EC800E PSK 路径使用 TLS 1.2 / `0xCCAC`
+(`ECDHE-PSK-CHACHA20-POLY1305`)。启用模组自动识别的产品在检测到
+`EC800ECNLCR01A10M04` 时使用 `0x00AE`（PSK-AES128-CBC-SHA256，
+不具备前向保密），A18 使用 `0xCCAC`。未知版本暂停 PSK 入网和连接。`seclevel=0` 在此路径
 表示不用 X.509，服务端身份由双方持有的逐设备 PSK 证明；不是匿名 TLS。
 PSK 模式不依赖 CCLK、OTA CA 或证书时间。业务 UTC、误差边界、有效期与幂等照常运行。
 CA 路径仍要求 CA 和时间。现有 RSA CA profile 显式选择证书套件 `0x009C`
 (TLS_RSA_WITH_AES_128_GCM_SHA256)，排除复用 context 中残留 PSK 的协商；
 模组实测拒绝空 PSK 清除命令，不能把这个命令加入 CA 准备流程。
 该 CA 基线要求 RSA 服务端证书，ECDSA CA endpoint 须另配匹配的证书套件；
-PSK 模式仍只有 `0xCCAC`。失败没有明文降级。
+失败没有明文降级。
 
 ## 配置和秘密边界
 
@@ -21,7 +25,8 @@ CA=0 是零初始化默认值，PSK=1。产品配置 V2/V5 原有字段、长度
 普通 OTA 保存保留扩展；历史旧固件保存可能擦掉扩展，因此降级须先做受控恢复。
 
 每设备一个随机 32 字符 ASCII 秘密，identity 最长 31 字符，generation 单调递增。
-模组接收原样 ASCII。stunnel 文件使用这些 ASCII 字节的十六进制编码；不能把
+A18 模组接收原样 ASCII；A10 命令接收 ASCII 字节的十六进制编码。
+stunnel 文件使用这些 ASCII 字节的十六进制编码；不能把
 32 字符当成 16 字节 Hex。工具生成 URL-safe 随机字符，有 192 位随机熵。
 禁止秘密出现在仓库、构建常量、命令行、普通日志和 get_info。AT owner 在路由前
 丢弃 PSK/QMTCONN 的秘密回显。TLS runtime/试用必须在 RAM 保留必要秘密；

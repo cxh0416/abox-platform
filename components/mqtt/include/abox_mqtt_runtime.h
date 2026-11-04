@@ -1,6 +1,7 @@
 #ifndef ABOX_MQTT_RUNTIME_H
 #define ABOX_MQTT_RUNTIME_H
 #include "abox_ec800_at.h"
+#include "abox_ec800_diagnostics.h"
 #include "abox_ec800_command_port.h"
 #include "abox_ec800_tls.h"
 #include "abox_mqtt_tls.h"
@@ -93,6 +94,8 @@ typedef struct {
   uint8_t probe_tls_capability;
   uint8_t query_clock_mode;
   uint8_t require_tls;
+  /* NULL retains legacy behavior; otherwise PSK waits for this modem identity. */
+  const ABoxEc800Diagnostics *firmware_diagnostics;
 } ABoxMqttRuntimeOptions;
 /* Standard STM32F105/EC800 wiring; callers still supply product lifecycle
  * callbacks and may override timeouts for a bench fault-injection build. */
