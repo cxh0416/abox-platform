@@ -1,5 +1,7 @@
 # ABox 公共入网实现
 
+内部资料，不作为业务对接协议对外交付。
+
 `ABoxEnrollment` 持有申请、轮询、凭据校验和试连结果状态；产品提供 UID、VID、产品
 hardwareContract、Boot/App 标识、HTTPS origin、就绪门禁和配置持久化适配。URL、请求体、
 响应、requestId 和 pollToken 缓冲区均由产品持有。模块不写 Flash，也不持有产品配置 ABI。
@@ -13,6 +15,12 @@ OTA 互斥和 AT 空闲，再调用 `Post`。HTTP 适配器先查询 PDP context
 等待 120 秒。401/403/404/410 清除 request 凭据并等待 120 秒重新申请；409、网络和
 服务端暂时错误保留阶段。试连失败保留 request，下一次优先 poll 重新领取凭据；领取
 窗口关闭后再次申请。取消时等待 HTTP 或试连适配完成清理。
+
+`ABoxEnrollmentMigration` 复用公共入网服务实现存量 PSK 迁移的请求关联、
+15 秒响应确认等待和 10 分钟审批等待。产品仍负责本机安全准入、维护消息解析及
+确认 202 响应的 MQTT PUBACK；只在关联响应确认且重新检查准入后启动 HTTPS。
+审批等待超时仅在 HTTP 和试连空闲后取消，恢复原 MQTT；试连完成由产品报告结果。
+未接入此能力的产品不能仅凭公共模块存在就声明支持。
 
 MQTT 试连共用 `ABoxMqttTrial`。已有配置切换使用 `Start` 并等待旧连接响应 ACK；首次
 入网使用 `StartFirst`，不需要旧配置或旧 ACK，120 秒试连超时、90 秒清理恢复超时。

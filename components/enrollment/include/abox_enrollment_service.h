@@ -46,6 +46,26 @@ ABoxEnrollmentState ABoxEnrollmentService_State(const ABoxEnrollmentService *ser
 void ABoxEnrollmentService_Cancel(ABoxEnrollmentService *service);
 void ABoxEnrollmentService_AfterModemReset(ABoxEnrollmentService *service);
 
+/* Shared request/response correlation for an explicitly authorized PSK
+ * migration. Products retain their own safety admission and MQTT PUBACK
+ * tracking. A response is confirmed only after the 202 was delivered. */
+typedef struct {
+    uint32_t started_ms;
+    uint8_t waiting, active;
+} ABoxEnrollmentMigration;
+#define ABOX_ENROLLMENT_MIGRATION_RESPONSE_MS 15000U
+#define ABOX_ENROLLMENT_MIGRATION_APPROVAL_MS 600000U
+int ABoxEnrollmentMigration_Request(ABoxEnrollmentMigration *, ABoxEnrollmentService *,
+    char *pending_id, size_t capacity, const char *request_id, uint32_t now);
+int ABoxEnrollmentMigration_Confirm(ABoxEnrollmentMigration *, ABoxEnrollmentService *,
+    char *pending_id, size_t capacity, const char *request_id, uint8_t admitted, uint32_t now);
+/* Cancels expired approval only when the product's trial and HTTP are idle.
+ * Returns 1 for response timeout, 2 for approval timeout, otherwise 0. */
+int ABoxEnrollmentMigration_Poll(ABoxEnrollmentMigration *, ABoxEnrollmentService *,
+    char *pending_id, size_t capacity, uint8_t trial_active, uint32_t now);
+void ABoxEnrollmentMigration_Finish(ABoxEnrollmentMigration *);
+
+
 #ifdef __cplusplus
 }
 #endif

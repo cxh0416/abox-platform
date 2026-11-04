@@ -119,3 +119,54 @@ void ABoxEnrollmentService_AfterModemReset(ABoxEnrollmentService *s)
     ABoxEnrollment_OnHttp(&s->enrollment, 0U, 0U, 1,
                           s->port.now_ms(s->port.user));
 }
+
+int ABoxEnrollmentMigration_Request(ABoxEnrollmentMigration *m, ABoxEnrollmentService *s,
+    char *pending, size_t cap, const char *id, uint32_t now)
+{
+    size_t n;
+    if (!m || !s || !s->initialized || !pending || !cap || !id ||
+        m->waiting || m->active || s->http.state != ABOX_ENROLL_HTTP_IDLE || s->http.blocked) return 0;
+    n = strlen(id);
+    if (!n || n >= cap) return 0;
+    memmove(pending, id, n + 1U);
+    m->started_ms = now; m->waiting = 1U;
+    return 1;
+}
+int ABoxEnrollmentMigration_Confirm(ABoxEnrollmentMigration *m, ABoxEnrollmentService *s,
+    char *pending, size_t cap, const char *id, uint8_t admitted, uint32_t now)
+{
+    ABoxEnrollmentPort port;
+    ABoxEnrollmentBuffers buffers;
+    const char *origin;
+    uint8_t profile;
+    if (!m || !s || !pending || !cap || !id || !m->waiting || strcmp(pending, id)) return 0;
+    m->waiting = 0U;
+    memset(pending, 0, cap);
+    if (!admitted || !s->initialized || s->http.blocked ||
+        s->http.state != ABOX_ENROLL_HTTP_IDLE) return 0;
+    port = s->enrollment.port; buffers = s->enrollment.buffers;
+    origin = s->enrollment.origin; profile = s->enrollment.expected_tls_profile_id;
+    if (!ABoxEnrollment_Init(&s->enrollment, &port, &buffers, origin) ||
+        !ABoxEnrollment_SetExpectedTlsProfile(&s->enrollment, profile) ||
+        !ABoxEnrollment_RequirePsk(&s->enrollment)) return 0;
+    m->active = 1U; m->started_ms = now;
+    return 1;
+}
+int ABoxEnrollmentMigration_Poll(ABoxEnrollmentMigration *m, ABoxEnrollmentService *s,
+    char *pending, size_t cap, uint8_t trial_active, uint32_t now)
+{
+    uint32_t elapsed;
+    if (!m || !s || !pending || !cap) return 0;
+    elapsed = now - m->started_ms;
+    if (m->waiting && elapsed >= ABOX_ENROLLMENT_MIGRATION_RESPONSE_MS) {
+        m->waiting = 0U; memset(pending, 0, cap); return 1;
+    }
+    if (m->active && elapsed >= ABOX_ENROLLMENT_MIGRATION_APPROVAL_MS &&
+        !trial_active && s->http.state == ABOX_ENROLL_HTTP_IDLE) {
+        ABoxEnrollmentService_Cancel(s); m->active = 0U;
+        s->port.mqtt_pause(s->port.user, 0U); return 2;
+    }
+    return 0;
+}
+void ABoxEnrollmentMigration_Finish(ABoxEnrollmentMigration *m)
+{ if (m) m->active = 0U; }

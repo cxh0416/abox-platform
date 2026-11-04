@@ -138,5 +138,27 @@ int main(void)
     assert(!at.quarantined && !service.http.blocked);
     assert(service.enrollment.have_request && !strcmp(request_id, "approved-request"));
     assert(!strcmp(poll_token, "approved-token"));
+    {
+        ABoxEnrollmentMigration m = {0}; char pending[48] = {0};
+        assert(!ABoxEnrollmentMigration_Request(&m, &service, pending, sizeof(pending), "", 0));
+        assert(ABoxEnrollmentMigration_Request(&m, &service, pending, sizeof(pending), "request-1", 0));
+        assert(!ABoxEnrollmentMigration_Request(&m, &service, pending, sizeof(pending), "request-2", 1));
+        assert(!ABoxEnrollmentMigration_Confirm(&m, &service, pending, sizeof(pending), "wrong", 1, 1));
+        assert(m.waiting);
+        assert(!ABoxEnrollmentMigration_Confirm(&m, &service, pending, sizeof(pending), "request-1", 0, 2));
+        assert(!m.active && !m.waiting && !pending[0]);
+        assert(ABoxEnrollmentMigration_Request(&m, &service, pending, sizeof(pending), "request-2", UINT32_MAX-10U));
+        assert(ABoxEnrollmentMigration_Poll(&m, &service, pending, sizeof(pending), 0, 14990U) == 1);
+        assert(!m.waiting && !pending[0]);
+        assert(ABoxEnrollmentMigration_Request(&m, &service, pending, sizeof(pending), "request-3", 30));
+        assert(ABoxEnrollmentMigration_Confirm(&m, &service, pending, sizeof(pending), "request-3", 1, 31));
+        assert(m.active && !m.waiting && service.enrollment.require_psk && service.enrollment.expected_tls_profile_id == 0U);
+        assert(ABoxEnrollmentMigration_Poll(&m, &service, pending, sizeof(pending), 1, 600031U) == 0);
+        service.http.state = ABOX_ENROLL_HTTP_PDP_ACTIVATE;
+        assert(ABoxEnrollmentMigration_Poll(&m, &service, pending, sizeof(pending), 0, 600031U) == 0);
+        service.http.state = ABOX_ENROLL_HTTP_IDLE;
+        assert(ABoxEnrollmentMigration_Poll(&m, &service, pending, sizeof(pending), 0, 600031U) == 2);
+        assert(!m.active);
+    }
     return 0;
 }
