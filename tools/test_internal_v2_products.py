@@ -74,7 +74,9 @@ def main():
             support += [platform / 'components/cloud/src/abox_cloud_queue.c',
                         platform / 'components/cloud/src/abox_cloud_dispatch.c',
                         platform / 'components/mqtt/src/abox_mqtt_v4.c',
-                        repo / 'app/Core/User/common/src/sha256.c',
+                        platform / 'components/mqtt/src/abox_sha256.c',
+                        platform / 'components/mqtt/src/abox_mqtt_digest.c',
+                        platform / 'components/mqtt/src/abox_mqtt_number.c',
                         repo / 'app/Core/User/cloud/src/meal_mqtt_profile.c']
             defines = []
             for macro, name in [('MEAL_COMMAND_SOURCE', 'mqtt_app_cmd.c'),

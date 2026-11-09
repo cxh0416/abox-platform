@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory)] [string] $PacketTest,
     [Parameter(Mandatory)] [string] $IdentityTest,
     [Parameter(Mandatory)] [string] $LifecycleTest,
-    [string] $Compiler = 'D:/MinGW/bin/gcc.exe'
+    [string] $Compiler = 'gcc'
 )
 $ErrorActionPreference = 'Stop'
 $platform = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
