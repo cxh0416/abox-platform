@@ -25,7 +25,9 @@ def configure(name: str, arguments: str, success: bool, diagnostic: str = "",
             "add_executable(consumer consumer.c)\n"
             f"set(ABOX_PRODUCT_CONFIG_DIR \"{config.as_posix()}\")\n"
             f"{attach_function}(consumer {arguments})\n"
-            f"{extra}\n",
+            f"{extra}\n"
+            'file(WRITE "${CMAKE_BINARY_DIR}/archive-format.txt" '
+            '"${CMAKE_STATIC_LIBRARY_PREFIX}\\n${CMAKE_STATIC_LIBRARY_SUFFIX}\\n")\n',
             encoding="utf-8")
         command = ["cmake", "-S", str(source), "-B", str(source / "build"),
                    "-G", "Ninja", "-DBUILD_TESTING=OFF"]
@@ -41,9 +43,11 @@ def configure(name: str, arguments: str, success: bool, diagnostic: str = "",
             built = subprocess.run(["cmake", "--build", str(source / "build")],
                                    capture_output=True, text=True)
             assert built.returncode == 0, f"{name} build: {built.stdout}{built.stderr}"
-            assert (source / "build/platform-build/components/mqtt/libabox_mqtt_v4.a").exists()
-            assert not (source / "build/platform-build/components/legacy/ota/libabox_ota.a").exists()
-            assert not (source / "build/platform-build/components/mqtt/libabox_mqtt_ec800_rx.a").exists()
+            prefix, suffix = (source / "build/archive-format.txt").read_text().splitlines()
+            components = source / "build/platform-build/components"
+            assert (components / "mqtt" / f"{prefix}abox_mqtt_v4{suffix}").exists()
+            assert not (components / "legacy/ota" / f"{prefix}abox_ota{suffix}").exists()
+            assert not (components / "mqtt" / f"{prefix}abox_mqtt_ec800_rx{suffix}").exists()
 
 
 def main() -> None:
