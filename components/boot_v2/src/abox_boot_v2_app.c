@@ -1032,7 +1032,6 @@ static void commit_verified_candidate(void)
 void ABoxBootV2App_Task(void)
 {
     char command[128];
-    ABoxBootV2Record state;
     uint32_t downloader_error;
 
     if (!g_initialized) return;
@@ -1126,35 +1125,7 @@ void ABoxBootV2App_Task(void)
         else if (!ABoxBootV2_ImageVectorValid(g.vector))
             download_fail(ABOX_BOOT_V2_APP_ERROR_VECTOR);
         else {
-            memset(&state, 0, sizeof(state));
-            (void)ABoxBootV2_StateLoad(&state);
-            state.candidate_slot = g.slot;
-            state.image_size = g.expected_size;
-            state.image_crc32 = g.expected_crc;
-            (void)snprintf(state.image_version, sizeof(state.image_version), "%s", g.version);
-            if (g.seeding) {
-                state.state = ABOX_BOOT_V2_CONFIRMED;
-                state.stable_slot = g.slot;
-                state.stable_image_size = g.expected_size;
-                state.stable_image_crc32 = g.expected_crc;
-                (void)snprintf(state.stable_image_version,
-                               sizeof(state.stable_image_version), "%s", g.version);
-            } else {
-                state.state = ABOX_BOOT_V2_INSTALL_PENDING;
-            }
-            if (!ABoxBootV2_StateSave(&state))
-                download_fail(ABOX_BOOT_V2_APP_ERROR_STATE);
-            else {
-                const uint8_t was_seeding = g.seeding;
-                g.busy = 0U;
-                g.seeding = 0U;
-                g.install_ready = (uint8_t)!was_seeding;
-                g.last_error = 0U;
-                g.state = ST_IDLE;
-                resume_mqtt();
-                log_message(1U, was_seeding ? "Boot V2 stable slot seeded"
-                                             : "Boot V2 candidate verified");
-            }
+            commit_verified_candidate();
         }
         break;
     default:
