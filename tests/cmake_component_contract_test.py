@@ -48,12 +48,15 @@ def configure(name: str, arguments: str, success: bool, diagnostic: str = "",
             assert (components / "mqtt" / f"{prefix}abox_mqtt_v4{suffix}").exists()
             assert not (components / "legacy/ota" / f"{prefix}abox_ota{suffix}").exists()
             assert not (components / "mqtt" / f"{prefix}abox_mqtt_ec800_rx{suffix}").exists()
+            assert not (components / "rtt" / f"{prefix}abox_rtt{suffix}").exists()
 
 
 def main() -> None:
     (ROOT / "build").mkdir(exist_ok=True)
     configure("generic-mqtt", "SCHEDULER BAREMETAL COMPONENTS core mqtt_v4", True,
               inspect_build=True)
+    configure("optional-rtt", "SCHEDULER BAREMETAL COMPONENTS rtt", True,
+              extra="target_link_libraries(consumer abox::rtt)")
     configure("v4-components", "SCHEDULER BAREMETAL COMPONENTS core cjson mqtt_v4 mqtt_digest "
               "mqtt_request mqtt_idempotency mqtt_registry ec800 ec800_ufs ec800_ufs_at boot_v2_common "
               "ufs_journal mqtt_idem_ufs cloud_service cloud_v4", True,

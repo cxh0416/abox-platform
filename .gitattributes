@@ -1,1 +1,2 @@
 *.pdf -diff -text
+components/rtt/third_party/* whitespace=-blank-at-eol

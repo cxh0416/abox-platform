@@ -12,6 +12,7 @@
 - `components/ota/`：当前 HTTPS/UFS 下载器；旧架构 EC800 AT 与直接写 Flash 组件位于 `components/legacy/ota/`。
 - `components/ec_power/`：EC800 上电、关机和重启时序。
 - `components/cjson/`：平台统一使用的 cJSON。
+- `components/rtt/`：仅显式接入的 SEGGER RTT 调试输出，使用方法见 [RTT 内部说明](docs/internal/rtt_debugging.md)。
 - `cmake/`：产品 App、旧 Boot 和 Boot V2 的 CMake 接入函数。
 - `targets/stm32f105_abox_boot/`：完整、可独立构建的公共 Boot 工程。
 - `tests/`：公共组件主机测试。

@@ -67,6 +67,9 @@ target_link_libraries(abox_board_io_stm32_v1_test PRIVATE abox::board_io)
 add_test(NAME abox_board_io_stm32_v1_test COMMAND abox_board_io_stm32_v1_test)
 add_test(NAME abox_component_contract_test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/cmake_component_contract_test.py)
+add_executable(abox_rtt_test abox_rtt_test.c)
+target_link_libraries(abox_rtt_test PRIVATE abox::rtt)
+add_test(NAME abox_rtt_test COMMAND abox_rtt_test)
 add_test(NAME abox_release_publish_test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_publish_release.py)
 add_executable(abox_config_store_test abox_config_store_test.c)
