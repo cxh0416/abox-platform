@@ -42,7 +42,14 @@ foreach ($product in $products) {
     $bootLinker = Join-Path $root $product.Boot
     $appLinker = Join-Path $root $product.App
     if ($product.BootV2) {
-        & $flashScript -BootLinker $bootLinker -AppLinker $appLinker | Out-Host
+        $layout = @{}
+        if ($product.Name -in @('Top_Flying_Wing', 'LockCtrlBoard_cheweishi', 'Sweeper_VCU')) {
+            $layout.NoConfigRecovery = $true
+        } elseif ($product.Name -eq 'Meal_Delivery_Vehicle') {
+            $layout.NoConfigRecovery = $true
+            $layout.ExpectedAppEnd = 0x0803E000
+        }
+        & $flashScript -BootLinker $bootLinker -AppLinker $appLinker @layout | Out-Host
     } else {
         Assert-Contains $bootLinker 'ORIGIN\s*=\s*0x0?8000000\s*,\s*LENGTH\s*=\s*(0x8000|32K)' "$($product.Name) legacy Boot region"
         Assert-Contains $appLinker 'ORIGIN\s*=\s*0x0?8008000\s*,\s*LENGTH\s*=\s*(0x37800|222K)' "$($product.Name) legacy App region"

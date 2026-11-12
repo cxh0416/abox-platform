@@ -7,6 +7,8 @@ param(
     [uint32] $BootSize = 0x8000,
     [uint32] $AppStart = 0x08008000,
     [uint32] $ConfigRecoveryStart = 0x0803E000,
+    [switch] $NoConfigRecovery,
+    [uint32] $ExpectedAppEnd = 0,
     [uint32] $BootStateAStart = 0x0803E800,
     [uint32] $BootStateBStart = 0x0803F000,
     [uint32] $BootStatePageSize = 0x800,
@@ -56,14 +58,22 @@ Assert-Equal 'Boot length' $boot.Length $BootSize
 Assert-Equal 'App origin' $app.Origin $AppStart
 $otaEnd = [uint64]$OtaInfoStart + $OtaInfoSize
 $appEnd = [uint64]$app.Origin + $app.Length
-if ($appEnd -ne $ConfigRecoveryStart) { throw 'App Flash region must end at the dedicated config recovery page' }
-if ($ConfigRecoveryStart + $BootStatePageSize -gt $BootStateAStart) { throw 'Config recovery page overlaps BootState A' }
+if ($ExpectedAppEnd -eq 0) {
+    $ExpectedAppEnd = if ($NoConfigRecovery) { $BootStateAStart } else { $ConfigRecoveryStart }
+}
+if ($appEnd -ne $ExpectedAppEnd) { throw 'App Flash region does not match the declared product boundary' }
+if (-not $NoConfigRecovery) {
+    if ($ExpectedAppEnd -ne $ConfigRecoveryStart) { throw 'App Flash region must end at the dedicated config recovery page' }
+    if ($ConfigRecoveryStart + $BootStatePageSize -gt $BootStateAStart) { throw 'Config recovery page overlaps BootState A' }
+}
 if ($appEnd -gt $OtaInfoStart) { throw 'App Flash region overlaps OTA info page' }
 if ($appEnd -gt $BootStateAStart) { throw 'App Flash region overlaps BootState A' }
 if ($BootStateAStart + $BootStatePageSize -gt $BootStateBStart) { throw 'BootState A overlaps BootState B' }
 if ($BootStateBStart + $BootStatePageSize -gt $OtaInfoStart) { throw 'BootState B overlaps OTA info page' }
 if ($otaEnd -gt ([uint64]$FlashBase + $FlashSize)) { throw 'OTA info page is outside declared device Flash capacity' }
 Write-Host "PASS BootState A 0x$('{0:X8}' -f $BootStateAStart)-0x$('{0:X8}' -f ($BootStateAStart + $BootStatePageSize - 1))"
-Write-Host "PASS config recovery 0x$('{0:X8}' -f $ConfigRecoveryStart)-0x$('{0:X8}' -f ($ConfigRecoveryStart + $BootStatePageSize - 1))"
+if (-not $NoConfigRecovery) {
+    Write-Host "PASS config recovery 0x$('{0:X8}' -f $ConfigRecoveryStart)-0x$('{0:X8}' -f ($ConfigRecoveryStart + $BootStatePageSize - 1))"
+}
 Write-Host "PASS BootState B 0x$('{0:X8}' -f $BootStateBStart)-0x$('{0:X8}' -f ($BootStateBStart + $BootStatePageSize - 1))"
 Write-Host "PASS OTA page 0x$('{0:X8}' -f $OtaInfoStart)-0x$('{0:X8}' -f ($otaEnd - 1))"

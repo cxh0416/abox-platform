@@ -33,11 +33,11 @@
 | `LockCtrlBoard_cheweishi` | `0x08008000..0x0803E7FF` | 218 KiB | 以产品发布合同为准 |
 | `Meal_Delivery_Vehicle` | `0x08008000..0x0803DFFF` | 216 KiB | 发布合同限制 216 KiB；App 的 `boot_cfg.h` 大小上限为 218 KiB |
 | `Patrol_Vehicle_Chassis` | `0x08008000..0x0803DFFF` | 216 KiB | `0x0803E000..0x0803E7FF` 是产品配置恢复页，不能作为 App 链接空间 |
-| `Sweeper_VCU` | `0x08008000..0x0803DFFF` | 216 KiB | 当前发布合同和 App 的 `boot_cfg.h` 上限为 218 KiB，与链接脚本不一致；需单独核对 |
+| `Sweeper_VCU` | `0x08008000..0x0803E7FF` | 218 KiB | App 的 `boot_cfg.h` 和发布合同上限均为 218 KiB |
 
 链接范围不能证明产品专属页在 OTA 或维修过程中保持不变；擦写范围和恢复行为须按实际使用的冻结 Boot 与产品实现核对。
 
-当前 [Flash 布局检查脚本](../tools/validate_flash_layout.ps1)固定要求 App 的结束边界为 `0x0803E000`（末字节为 `0x0803DFFF`）并为配置恢复页预留空间，因此不适用于飞翼和锁板当前的 218 KiB 链接布局；对其他 216 KiB 产品通过该检查也不代表它们实现了配置恢复页。
+[Flash 布局检查脚本](../tools/validate_flash_layout.ps1)默认检查配置恢复页；没有恢复页的产品须指定 `-NoConfigRecovery`，需要较小 App 上限时还须指定结束边界 `-ExpectedAppEnd`。检查时使用产品固定的平台版本；旧版本脚本可能不支持这些参数。
 
 工厂或维修 Full 包可以包含 Boot、描述符和 App，但不得写入 Boot State A/B 或产品配置页。
 
