@@ -33,6 +33,10 @@ void MqttTrialManager_OnRuntimeState(ABoxMqttRuntimeState s, uint32_t t) { (void
 static uint32_t tick(void *u) { (void)u; return now; }
 static int write_at(void *u, const uint8_t *d, uint16_t n, uint32_t t)
 { (void)u; (void)d; (void)n; (void)t; return 1; }
+#ifdef MEAL_MQTT_RUNTIME_H
+static void occupied_handler(ABoxEc800Event e, const uint8_t *d, uint16_t n, void *u)
+{ (void)e; (void)d; (void)n; (void)u; }
+#endif
 #ifdef PRODUCT_SWEEPER
 #define INIT SweeperMqttRuntime_Init
 #define TASK SweeperMqttRuntime_Task
@@ -49,7 +53,8 @@ static void reach_ready(ABoxEc800At* at)
         TASK(++now); ABoxEc800At_Task(at);
         if (at->active_valid) {
             const char* reply=strstr(at->active.command,"QSSLCFG=?") ?
-                "+QSSLCFG: \"sslversion\",(0-3)\r\nOK\r\n" : "OK\r\n";
+                "+QSSLCFG: \"sslversion\",(0-3)\r\nOK\r\n" :
+                strstr(at->active.command,"QGMR") ? "EC800ECNLCR01A10M04\r\nOK\r\n" : "OK\r\n";
             ABoxEc800At_Feed(at,(const uint8_t*)reply,(uint16_t)strlen(reply));
         }
     }
@@ -64,8 +69,17 @@ int main(void)
     c.tls_profile_id=1;
 #endif
     assert(ABoxEc800At_Init(&at, &p));
+#ifdef MEAL_MQTT_RUNTIME_H
+    /* Model probing and runtime must coexist with the other five owners. */
+    for (unsigned i=0; i<5; ++i)
+        assert(ABoxEc800At_Register(&at, (ABoxEc800Owner)(100U+i), occupied_handler, 0));
+#endif
     assert(INIT(&at, &c, 0));
     reach_ready(&at);
+#ifdef MEAL_MQTT_RUNTIME_H
+    assert(MqttRuntime_ModemFirmware() == ABOX_EC800_FIRMWARE_A10);
+    assert(!ABoxEc800At_Register(&at, 110U, occupied_handler, 0));
+#endif
     assert(ABoxMqttRuntime_IsReady(&g_runtime));
     online=0;
     g_runtime.state=ABOX_MQTT_RUNTIME_CONNECT;
