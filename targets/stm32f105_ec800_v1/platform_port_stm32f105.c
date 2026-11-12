@@ -28,8 +28,13 @@ static int uart_write(void *context, const uint8_t *data, uint32_t length)
 
 static int flash_begin(void *context)
 {
+    HAL_StatusTypeDef status;
     (void)context;
-    return HAL_FLASH_Unlock() == HAL_OK;
+    status = HAL_FLASH_Unlock();
+    /* HAL may report an error while readback already shows the controller
+     * unlocked. Never proceed if it remains locked or HAL reported busy. */
+    return (status == HAL_OK || status == HAL_ERROR) &&
+           (FLASH->CR & FLASH_CR_LOCK) == 0U;
 }
 
 static int flash_write(void *context, uint32_t address, const uint8_t *data, uint32_t length)

@@ -1,4 +1,9 @@
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_executable(stm32f105_flash_begin_test stm32f105_flash_begin_test.c)
+target_include_directories(stm32f105_flash_begin_test PRIVATE
+    stm32_port_stub ../components/core/include ../components/ec_power/include
+    ../targets/stm32f105_ec800_v1/include)
+add_test(NAME stm32f105_flash_begin_test COMMAND stm32f105_flash_begin_test)
 add_executable(abox_mqtt_registry_test abox_mqtt_registry_test.c)
 target_link_libraries(abox_mqtt_registry_test PRIVATE abox::mqtt_registry)
 add_test(NAME abox_mqtt_registry_test COMMAND abox_mqtt_registry_test)
