@@ -7,6 +7,7 @@
 | `Top_Flying_Wing` | STM32F105R / LQFP64 | 裸机 | CMake | 已使用公共 Boot V2，App 下载 | 顶飞翼 CAN 与安全停止状态机 |
 | `LockCtrlBoard_cheweishi` | STM32F105R / LQFP64 | 裸机 | CMake | 已使用公共 Boot V2，App 下载 | 锁板 RS485 与温度总线 |
 | `Meal_Delivery_Vehicle` | STM32F105R / LQFP64 | 裸机 | CMake | 已使用公共 Boot V2，App 下载 | 双锁 RS485/MQTT |
+| `Patrol_Vehicle_Chassis` | STM32F105R / LQFP64 | FreeRTOS | CMake | 已使用公共 Boot V2，App 下载 | 底盘运动、转向与配置恢复页 |
 | `Sweeper_VCU` | STM32F105R / LQFP64 | FreeRTOS | CMake | 已使用公共 Boot V2，App 下载 | VCU 任务、IWDG、双 CAN |
 | `Airport_vehicle` | STM32F105R / LQFP64 | 裸机 | CMake | 旧 Boot 通过 HTTP 下载，待迁移 | 遥控、驱动、CAN、EC800 |
 | `CageDumper` | STM32F105R / LQFP64 | 裸机 | CMake | 旧 Boot 通过 HTTP 下载，待迁移 | 8 路输入与电机 CAN |
@@ -19,10 +20,24 @@
 |---|---|---|
 | Boot 代码 | `0x08000000..0x08007EFF` | 不得覆盖描述符 |
 | Boot 描述符 | `0x08007F00..0x08007FFF` | 256 字节只读描述符，ABI 1 |
-| App | `0x08008000..0x0803E7FF` | 最大 `0x36800` 字节 |
+| 公共 Boot App 地址上限 | `0x08008000..0x0803E7FF` | 最大 `0x36800` 字节；产品可收紧，不能直接作为产品 App 链接或发布上限 |
 | Boot State A | `0x0803E800..0x0803EFFF` | Boot State V3 A 页 |
 | Boot State B | `0x0803F000..0x0803F7FF` | Boot State V3 B 页 |
 | 产品配置 | `0x0803F800..0x0803FFFF` | 保持各产品已有数据布局 |
+
+公共 Boot 支持的范围不代表每个产品都可将整个范围用于 App。以下是各产品当前 App 链接脚本声明的范围；发布时还须核对该产品的发布合同、OTA 大小限制及专属保留区，采用适用的收紧限制。
+
+| 产品 | App 链接范围 | 链接容量 | 其他限制与差异 |
+|---|---|---:|---|
+| `Top_Flying_Wing` | `0x08008000..0x0803E7FF` | 218 KiB | 以产品发布合同为准 |
+| `LockCtrlBoard_cheweishi` | `0x08008000..0x0803E7FF` | 218 KiB | 以产品发布合同为准 |
+| `Meal_Delivery_Vehicle` | `0x08008000..0x0803DFFF` | 216 KiB | 发布合同限制 216 KiB；App 的 `boot_cfg.h` 大小上限为 218 KiB |
+| `Patrol_Vehicle_Chassis` | `0x08008000..0x0803DFFF` | 216 KiB | `0x0803E000..0x0803E7FF` 是产品配置恢复页，不能作为 App 链接空间 |
+| `Sweeper_VCU` | `0x08008000..0x0803DFFF` | 216 KiB | 当前发布合同和 App 的 `boot_cfg.h` 上限为 218 KiB，与链接脚本不一致；需单独核对 |
+
+链接范围不能证明产品专属页在 OTA 或维修过程中保持不变；擦写范围和恢复行为须按实际使用的冻结 Boot 与产品实现核对。
+
+当前 [Flash 布局检查脚本](../tools/validate_flash_layout.ps1)固定要求 App 的结束边界为 `0x0803E000`（末字节为 `0x0803DFFF`）并为配置恢复页预留空间，因此不适用于飞翼和锁板当前的 218 KiB 链接布局；对其他 216 KiB 产品通过该检查也不代表它们实现了配置恢复页。
 
 工厂或维修 Full 包可以包含 Boot、描述符和 App，但不得写入 Boot State A/B 或产品配置页。
 
@@ -33,9 +48,10 @@
 | `Top_Flying_Wing` | `TopFlyingWing_App.bin` | `ABox_Boot.bin` | `abox-boot-2.3.0` |
 | `LockCtrlBoard_cheweishi` | `LockCtrlBoard_App.bin` | `ABox_Boot.bin` | `abox-boot-2.3.0` |
 | `Meal_Delivery_Vehicle` | `MealDeliveryVehicle_App.bin` | `ABox_Boot.bin` | `abox-boot-2.3.0` |
+| `Patrol_Vehicle_Chassis` | `Patrol_Vehicle_Chassis_App.bin` | `ABox_Boot.bin` | `abox-boot-2.3.0` |
 | `Sweeper_VCU` | `Sweeper_VCU_App.bin` | `ABox_Boot.bin` | `abox-boot-2.3.0` |
 
-以上四个产品均使用 `otaScheme=boot_v2_ufs`、`otaDownloader=app`、描述符 ABI 1 和特性掩码 `0x0000000F`。平台必须通过真实 `get_info` 获得 `otaReady=true`，不能从公共心跳、构建结果或 MQTT 确认推断设备具备 OTA 能力。
+以上五个产品均使用 `otaScheme=boot_v2_ufs`、`otaDownloader=app`、描述符 ABI 1 和特性掩码 `0x0000000F`。平台必须通过真实 `get_info` 获得 `otaReady=true`，不能从公共心跳、构建结果或 MQTT 确认推断设备具备 OTA 能力。
 
 ## 旧架构迁移限制
 

@@ -61,7 +61,7 @@ Boot V2 App 端口负责 AT 命令提交、原始数据接收、MQTT 暂停/恢�
 
 ## 5. Flash 与 RAM 合同
 
-统一 Flash 地址为：Boot `0x08000000..0x08007FFF`、App `0x08008000..0x0803E7FF`、Boot State A/B `0x0803E800` 和 `0x0803F000`、产品配置页 `0x0803F800`。维修 Full 包只能包含 Boot、描述符和 App，不得覆盖 Boot State 或产品配置页。
+公共 Boot 的 Flash 地址为：Boot `0x08000000..0x08007FFF`、App 支持上限 `0x08008000..0x0803E7FF`、Boot State A/B `0x0803E800` 和 `0x0803F000`、产品配置页 `0x0803F800`。App 实际链接和发布范围由产品合同收紧，详见[产品接入矩阵](PRODUCT_MATRIX.md)；不得将公共上限直接作为各产品 App 容量。维修 Full 包只能包含 Boot、描述符和 App，不得覆盖 Boot State、产品配置页或产品专属保留区。
 
 使用复位保持故障邮箱的产品，Boot 与 App 必须把 `.noinit` 固定在同一 RAM 绝对地址。链接脚本必须断言 `.bss` 在邮箱前结束，并保证 OTA 工作区之上仍保留声明的最低栈空间。
 

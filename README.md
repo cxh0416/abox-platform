@@ -28,7 +28,7 @@
 
 - Boot：`0x08000000..0x08007FFF`；
 - 描述符：`0x08007F00..0x08007FFF`；
-- App：`0x08008000..0x0803E7FF`；
+- 公共 Boot 支持的 App 上限：`0x08008000..0x0803E7FF`；各产品实际链接和发布上限可能更小，见[产品接入矩阵](docs/PRODUCT_MATRIX.md)；
 - Boot State A/B：`0x0803E800`、`0x0803F000`；
 - 产品配置页：`0x0803F800`；
 - 冻结产物：`targets/stm32f105_abox_boot/dist/ABox_Boot.bin`；
@@ -57,7 +57,7 @@ V4 App 公共组件提供请求准入、参数级操作分类、持久幂等、E
 
 新操作表、C 描述符和 JSON Registry 可通过统一[主机校验入口](docs/internal/mqtt_v4_registry_validation.md)核对完整合同；旧 Schema 1 描述符继续兼容，并明确标注有限校验范围。
 
-当前 `Top_Flying_Wing`、`LockCtrlBoard_cheweishi`、`Meal_Delivery_Vehicle`、`Sweeper_VCU` 已接入公共 Boot；`Airport_vehicle`、`CageDumper` 仍为旧 Boot 网络下载架构，切换前必须先改造 App，并确认旧设备迁移方案。
+当前 `Top_Flying_Wing`、`LockCtrlBoard_cheweishi`、`Meal_Delivery_Vehicle`、`Patrol_Vehicle_Chassis`、`Sweeper_VCU` 已接入公共 Boot；`Airport_vehicle`、`CageDumper` 仍为旧 Boot 网络下载架构，切换前必须先改造 App，并确认旧设备迁移方案。
 
 ## 构建与验证
 
