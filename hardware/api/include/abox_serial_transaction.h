@@ -6,8 +6,15 @@
  * transmit so a fast response or local echo is retained. A bounded queue
  * preserves idle-delimited chunks; overflow or UART errors fail the request.
  * Poll and cancellation belong to one task; callbacks execute in the ISR. */
+#ifndef ABOX_SERIAL_TRANSACTION_CHUNK_SIZE
 #define ABOX_SERIAL_TRANSACTION_CHUNK_SIZE 64U
+#endif
+#ifndef ABOX_SERIAL_TRANSACTION_SLOTS
 #define ABOX_SERIAL_TRANSACTION_SLOTS 4U
+#endif
+#if ABOX_SERIAL_TRANSACTION_SLOTS < 2 || ABOX_SERIAL_TRANSACTION_SLOTS > 255 || ABOX_SERIAL_TRANSACTION_CHUNK_SIZE < 1 || ABOX_SERIAL_TRANSACTION_CHUNK_SIZE > 65535
+#error "Invalid serial transaction queue dimensions"
+#endif
 typedef struct {
     uint8_t rx[ABOX_SERIAL_TRANSACTION_CHUNK_SIZE];
     uint8_t chunks[ABOX_SERIAL_TRANSACTION_SLOTS][ABOX_SERIAL_TRANSACTION_CHUNK_SIZE];
