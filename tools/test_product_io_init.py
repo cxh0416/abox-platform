@@ -55,6 +55,9 @@ static int HAL_UART_AbortReceive(UART_HandleTypeDef *u)
 { return HAL_UART_DMAStop(u); }
 static int HAL_UARTEx_ReceiveToIdle_DMA(UART_HandleTypeDef *u, uint8_t *b, uint16_t n)
 { (void)u; assert(b && n>=1088); ++starts; return start_status; }
+static int ABoxModemPort_AbortRx(void) { ++stops; return stop_status == 0; }
+static int ABoxModemPort_StartRx(uint8_t *b, uint16_t n)
+{ assert(b && n>=1088); ++starts; return start_status == 0; }
 """
 if not meal:
     uart += function(source, "uart_start_rx") + "\n"
