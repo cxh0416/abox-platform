@@ -17,8 +17,8 @@
 `stm32f105_ec800_v1` 保留兼容，它的后缀不再用作 PCB 版本选择。
 
 产品接线按外部端子编号描述，例如 `v1/B8`、`v2/B8`；`B8` 不代表 MCU 的 PB8。
-`ABoxBoardIoStm32_ReadTerminal(ABOX_BOARD_TERMINAL_B8, &level)` 返回该板型端子的
-瞬时 MCU 电平，不做消抖。端子不存在或输出指针为空时返回 0，不访问 GPIO，
+`ABoxBoardIo_ReadTerminal(ABOX_BOARD_TERMINAL_B8, &level)` 由当前 GD 或 ST 板卡后端提供，
+返回该板型端子的瞬时 MCU 电平，不做消抖。原 `ABoxBoardIoStm32_ReadTerminal` 保留兼容。端子不存在或输出指针为空时返回 0，不访问 GPIO，
 也不改写输出参数。该读取不受 `ABoxBoardIo` 实例的初始化状态控制，调用前须
 完成输入初始化。`ABoxBoardIoStm32_InputsInit()` 只配置对应输入，不操作电源输出和 LED。
 
@@ -56,6 +56,12 @@
 其他产品不得由此推断它们的负载或联锁。`allowed_outputs` 位掩码只允许产品
 显式开启的通道；未授权通道仍可执行关闭。输出写入会核对 MCU ODR 锁存位，
 读回失败时尝试拉低，不能把这一读回解释为真实负载或继电器触点反馈。
+
+`ABoxBoardIo_HardwarePort()` 提供当前目标的板载 IO 端口。产品在板级 GPIO
+初始化后可按自身业务使用 `write_output`、`write_led`；`read_output_pin` 读取
+MCU 引脚瞬时电平，与 `read_output` 读取 ODR 输出锁存器不同。两者都不能证明
+外部供电或负载状态。该底层端口不隐式调用整板 `prepare`，产品须自行保证
+初始化顺序和输出控制；原有 `ABoxBoardIo_Init` 的安全初始化和授权语义不变。
 
 输入每次 `ABoxBoardIo_Poll(now_ms)` 采样，稳定 20 ms 后设置有效位。
 读取失败清除对应有效位，恢复后重新计时。`raw_mask` 和 `stable_mask`

@@ -10,7 +10,7 @@ add_library(abox::boot_v2_app ALIAS abox_boot_v2_app)
 target_include_directories(abox_boot_v2_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(abox_boot_v2_app PUBLIC abox::boot_v2_common
     abox::https_ufs_downloader abox::ec800 abox::mqtt_ec800)
-add_library(abox_boot_v2_boot STATIC src/abox_boot_v2_boot.c)
+add_library(abox_boot_v2_boot STATIC src/abox_boot_v2_boot.c src/abox_boot_v2_installer.c)
 add_library(abox::boot_v2_boot ALIAS abox_boot_v2_boot)
 target_include_directories(abox_boot_v2_boot PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(abox_boot_v2_boot PUBLIC abox::boot_v2_common abox::core)

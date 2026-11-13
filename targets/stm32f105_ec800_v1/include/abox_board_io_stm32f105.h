@@ -18,18 +18,6 @@
 #error "ABOX_BOARD_VERSION must select v1 or v2"
 #endif
 
-/* External connector positions, not STM32 port B pin numbers. */
-typedef enum {
-    ABOX_BOARD_TERMINAL_B4 = 4,
-    ABOX_BOARD_TERMINAL_B5,
-    ABOX_BOARD_TERMINAL_B6,
-    ABOX_BOARD_TERMINAL_B7,
-    ABOX_BOARD_TERMINAL_B8,
-    ABOX_BOARD_TERMINAL_B9,
-    ABOX_BOARD_TERMINAL_B10,
-    ABOX_BOARD_TERMINAL_B11
-} ABoxBoardTerminal;
-
 /* Called by generated GPIO initialization before any board output is enabled. */
 void ABoxBoardIoStm32_SafeInit(void);
 /* Configure only the selected board's inputs; preserve outputs and LEDs. */

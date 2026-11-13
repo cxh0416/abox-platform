@@ -1,6 +1,7 @@
 #include "abox_board_io_stm32f105.h"
 
 #include "stm32f1xx_hal.h"
+#include "../../hardware/boards/abox_v2/include/abox_v2_pins.h"
 
 typedef struct {
     GPIO_TypeDef *gpio;
@@ -18,8 +19,7 @@ static const BoardPin inputs[] = {
 #define FIRST_INPUT_TERMINAL ABOX_BOARD_TERMINAL_B8
 #else
 static const BoardPin inputs[] = {
-    {GPIOC, GPIO_PIN_3}, {GPIOC, GPIO_PIN_2}, {GPIOC, GPIO_PIN_1}, {GPIOC, GPIO_PIN_0},
-    {GPIOA, GPIO_PIN_7}, {GPIOA, GPIO_PIN_6}, {GPIOA, GPIO_PIN_5}, {GPIOA, GPIO_PIN_4}
+    ABOX_V2_INPUT_PINS
 };
 #define FIRST_INPUT_TERMINAL ABOX_BOARD_TERMINAL_B4
 #endif
@@ -75,6 +75,11 @@ int ABoxBoardIoStm32_ReadTerminal(ABoxBoardTerminal terminal, uint8_t *level)
     return 1;
 }
 
+int ABoxBoardIo_ReadTerminal(ABoxBoardTerminal terminal, uint8_t *level)
+{
+    return ABoxBoardIoStm32_ReadTerminal(terminal, level);
+}
+
 static int prepare(void *context)
 {
     (void)context;
@@ -114,6 +119,14 @@ static int read_output(void *context, ABoxBoardIoOutput output, uint8_t *level)
     return 1;
 }
 
+static int read_output_pin(void *context, ABoxBoardIoOutput output, uint8_t *level)
+{
+    (void)context;
+    if ((unsigned)output >= ABOX_BOARD_IO_OUTPUT_COUNT || !level) return 0;
+    *level = HAL_GPIO_ReadPin(outputs[output].gpio, outputs[output].pin) == GPIO_PIN_SET;
+    return 1;
+}
+
 static int read_input(void *context, ABoxBoardIoInput input, uint8_t *level)
 {
     (void)context;
@@ -150,7 +163,12 @@ const ABoxBoardIoPort *ABoxBoardIoStm32_Port(void)
 {
     static const ABoxBoardIoPort port = {
         0, prepare, write_output, read_output, read_input, write_led,
-        enter_critical, exit_critical, prepare_leds
+        enter_critical, exit_critical, prepare_leds, read_output_pin
     };
     return &port;
+}
+
+const ABoxBoardIoPort *ABoxBoardIo_HardwarePort(void)
+{
+    return ABoxBoardIoStm32_Port();
 }

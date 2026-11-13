@@ -1,2 +1,7 @@
 *.pdf -diff -text
 components/rtt/third_party/* whitespace=-blank-at-eol
+
+# Preserve upstream and CubeMX-generated source whitespace.
+vendor/** whitespace=-blank-at-eol,-blank-at-eof
+hardware/boards/abox_v2/stm32cubemx/** whitespace=-blank-at-eol,-blank-at-eof
+hardware/boards/abox_v2/hal_config/** whitespace=-blank-at-eol,-blank-at-eof

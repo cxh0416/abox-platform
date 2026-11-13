@@ -1,20 +1,25 @@
 # A-Box 公共固件平台
 
-当前平台版本为 `0.3.0`。平台同时提供可复用固件组件，以及面向统一 STM32F105/EC800 硬件基线的完整 Boot V2 工程。
+当前平台版本为 `0.3.0`。平台提供可复用固件组件、ABox 硬件接口及对应 MCU 的厂商库和 Boot 工程。
 
-公共组件、公共 MQTT 规则和 Boot 在本仓库维护；各产品仓库维护业务 Profile、硬件适配和产品交付脚本，并固定平台提交。[内部协议文档中心](https://github.com/cxh0416/protocol-docs) 同步登记的源协议，不取代本仓库的协议维护入口。
+公共组件、硬件接口、公共 MQTT 规则和 Boot 在本仓库维护；各产品仓库维护业务 Profile、产品配置和交付脚本，并固定平台提交。[内部协议文档中心](https://github.com/cxh0416/protocol-docs) 同步登记的源协议，不取代本仓库的协议维护入口。
 
 ## 目录说明
 
 - `components/core/include/`、`components/core/src/`：产品配置校验、硬件回调端口和平台版本接口。
 - `components/board_io/`：可选的通用板载 I/O 状态组件；板型映射见 [内部说明](docs/internal/board_io.md)。
 - `components/boot_v2/`：Boot State V3、描述符、故障邮箱、App 下载端和 Boot 安装端。
+- `hardware/api/`：平台自有串口、EC800 串口、CAN 和 MCU 标识接口；Flash、时基和板载 I/O 复用既有平台 Port。
+- `hardware/mcu/`、`hardware/boards/`：MCU 驱动适配与板卡初始化、引脚配置；接入方式见[硬件库说明](hardware/README.md)。
+- `vendor/`：固定版本的 STM32F1 HAL 1.1.10 和 GD32F10x 固件库 2.7.0 及其来源、许可说明。
 - `components/ota/`：当前 HTTPS/UFS 下载器；旧架构 EC800 AT 与直接写 Flash 组件位于 `components/legacy/ota/`。
 - `components/ec_power/`：EC800 上电、关机和重启时序。
 - `components/cjson/`：平台统一使用的 cJSON。
 - `components/rtt/`：仅显式接入的 SEGGER RTT 调试输出，使用方法见 [RTT 内部说明](docs/internal/rtt_debugging.md)。
 - `cmake/`：产品 App、旧 Boot 和 Boot V2 的 CMake 接入函数。
 - `targets/stm32f105_abox_boot/`：完整、可独立构建的公共 Boot 工程。
+- `targets/gd32f105_abox_boot/`：独立的 GD32 Boot 工程；当前验证范围和 OTA 限制见[目标说明](targets/gd32f105_abox_boot/README.md)。
+- `examples/f105_app/`：F105 板级硬件的一次接入及双 MCU 最小构建示例。
 - `tests/`：公共组件主机测试。
 - `tools/`：Flash 布局、产品矩阵、基线和产品发布校验工具。
 - [底层 SWD 调试工具](docs/internal/jlink_swd_debugging.md)：常规 J-Link/GDB 连续读取失败时使用公共脚本切换到 CoreSight AP/DP 访问。

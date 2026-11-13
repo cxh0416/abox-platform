@@ -87,8 +87,58 @@ endif()''')
               "PRODUCT_CONFIG_DIR and SCHEDULER are",
               attach_function="abox_platform_attach_standard_app")
     configure("standard-port-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,
-              "HARDWARE must be stm32f105_ec800_v1",
+              "unsupported HARDWARE",
               extra="abox_platform_attach_standard_port(consumer HARDWARE unknown)")
+    configure("f105-app-st-can",
+              "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1 CAN", True,
+              attach_function="abox_platform_attach_f105_app",
+              extra='''get_target_property(definitions consumer COMPILE_DEFINITIONS)
+if(NOT "ABOX_CAN_PORT_ENABLED=1" IN_LIST definitions)
+  message(FATAL_ERROR "public CAN ownership definition missing")
+endif()
+get_target_property(sources consumer SOURCES)
+list(FILTER sources INCLUDE REGEX "can_port_stm32f105.c$")
+list(LENGTH sources can_sources)
+if(NOT can_sources EQUAL 1)
+  message(FATAL_ERROR "public CAN source must be attached once")
+endif()''' )
+    configure("f105-app-duplicate",
+              "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1", False,
+              "target already attached", attach_function="abox_platform_attach_f105_app",
+              extra="abox_platform_attach_f105_app(consumer PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1)")
+    configure("f105-app-bad-hal",
+              "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1 HAL_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR}",
+              False, "HAL_CONFIG_DIR must contain", attach_function="abox_platform_attach_f105_app")
+    configure("f105-app-bad-hardware",
+              "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE missing", False,
+              "unsupported HARDWARE", attach_function="abox_platform_attach_f105_app")
+    configure("f105-app-bad-scheduler",
+              "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1 SCHEDULER FREERTOS",
+              False, "only BAREMETAL", attach_function="abox_platform_attach_f105_app")
+    configure("serial-port", "SCHEDULER BAREMETAL COMPONENTS core", True,
+              extra="abox_platform_attach_serial_port(consumer HARDWARE stm32f105_ec800_v1)")
+    configure("serial-port-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,
+              "unsupported HARDWARE",
+              extra="abox_platform_attach_serial_port(consumer HARDWARE unknown)")
+    configure("serial-port-gd", "SCHEDULER BAREMETAL COMPONENTS core", True,
+              extra="abox_platform_attach_serial_port(consumer HARDWARE gd32f105_ec800_v1)")
+    configure("can-port-st", "SCHEDULER BAREMETAL COMPONENTS core", True,
+              extra="abox_platform_attach_can_port(consumer HARDWARE stm32f105_ec800_v1)")
+    configure("can-port-gd", "SCHEDULER BAREMETAL COMPONENTS core", True,
+              extra="abox_platform_attach_can_port(consumer HARDWARE gd32f105_ec800_v1)")
+    configure("can-port-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,
+              "unsupported HARDWARE", extra="abox_platform_attach_can_port(consumer HARDWARE unknown)")
+    configure("modem-port", "SCHEDULER BAREMETAL COMPONENTS core", True,
+              extra="abox_platform_attach_modem_port(consumer HARDWARE stm32f105_ec800_v1)")
+    configure("modem-port-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,
+              "unsupported HARDWARE",
+              extra="abox_platform_attach_modem_port(consumer HARDWARE unknown)")
+    configure("modem-port-gd", "SCHEDULER BAREMETAL COMPONENTS core", True,
+              extra="abox_platform_attach_modem_port(consumer HARDWARE gd32f105_ec800_v1)")
+    configure("hardware-gd", "SCHEDULER BAREMETAL HARDWARE gd32f105_ec800_v1 COMPONENTS core", True,
+              board="v1")
+    configure("hardware-gd-invalid-board", "SCHEDULER BAREMETAL HARDWARE gd32f105_ec800_v1 COMPONENTS core", False,
+              "supports only ABOX_BOARD_VERSION=v1", board="v2")
     configure("hardware-mismatch", "SCHEDULER FREERTOS HARDWARE stm32f105_ec800_v1 COMPONENTS core",
               False, "scheduler disagrees")
     configure("scheduler", "SCHEDULER UNKNOWN COMPONENTS core", False, "SCHEDULER")

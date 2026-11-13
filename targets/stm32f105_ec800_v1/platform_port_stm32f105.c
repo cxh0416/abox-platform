@@ -77,7 +77,7 @@ static void ec_pwrkey_write(void *context, uint8_t level)
                       level ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
-void ABoxStm32F105Ec800Port_Init(void)
+int ABoxStm32F105Ec800Port_TryInit(void)
 {
     static const ABoxPlatformPort port = {
         0, get_tick, uart_write, flash_begin, flash_write,
@@ -95,6 +95,10 @@ void ABoxStm32F105Ec800Port_Init(void)
 #ifdef ABOX_STM32_MONOTONIC
     ABoxStm32Monotonic_Init();
 #endif
-    (void)ABox_PlatformPortBind(&port);
-    (void)ABox_EcPower_SetConfig(&power);
+    return ABox_PlatformPortBind(&port) && ABox_EcPower_SetConfig(&power);
+}
+
+void ABoxStm32F105Ec800Port_Init(void)
+{
+    (void)ABoxStm32F105Ec800Port_TryInit();
 }

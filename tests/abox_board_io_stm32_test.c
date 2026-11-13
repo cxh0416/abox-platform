@@ -80,6 +80,15 @@ int main(void)
         assert(ABoxBoardIo_OutputGet(&io, (ABoxBoardIoOutput)i, &level) == ABOX_BOARD_IO_OK && level);
     }
     assert(gpio_a.ODR == 0x07U && gpio_c.ODR == 0x10U);
+    /* Latch and pin reads intentionally have different meanings. */
+    assert(ABoxBoardIo_HardwarePort() == port);
+    gpio_a.IDR = 0U;
+    assert(port->read_output(0, ABOX_BOARD_IO_OUT1, &level) && level == 1U);
+    assert(port->read_output_pin(0, ABOX_BOARD_IO_OUT1, &level) && level == 0U);
+    gpio_a.IDR = 1U;
+    assert(port->read_output_pin(0, ABOX_BOARD_IO_OUT1, &level) && level == 1U);
+    assert(!port->read_output_pin(0, (ABoxBoardIoOutput)9, &level));
+    assert(!port->read_output_pin(0, ABOX_BOARD_IO_OUT1, 0));
     for (i = 0; i < 8; ++i) {
 #if ABOX_BOARD_VERSION == ABOX_BOARD_VERSION_V1
         static const uint8_t expected_pin[4] = {4, 5, 6, 7};
@@ -100,6 +109,7 @@ int main(void)
 #endif
         assert(port->read_input(0, (ABoxBoardIoInput)i, &level) && level == 1U);
         assert(ABoxBoardIoStm32_ReadTerminal(terminal, &level) && level == 1U);
+        assert(ABoxBoardIo_ReadTerminal(terminal, &level) && level == 1U);
         gpio_c.IDR = gpio_a.IDR = 0U;
         assert(ABoxBoardIoStm32_ReadTerminal(terminal, &level) && level == 0U);
     }
@@ -108,6 +118,7 @@ int main(void)
         unsigned previous = reads;
         level = 0x55U;
         assert(!ABoxBoardIoStm32_ReadTerminal((ABoxBoardTerminal)invalid[i], &level));
+        assert(!ABoxBoardIo_ReadTerminal((ABoxBoardTerminal)invalid[i], &level));
         assert(reads == previous && level == 0x55U);
     }
 #if ABOX_BOARD_VERSION == ABOX_BOARD_VERSION_V1

@@ -59,7 +59,7 @@ int main(void)
     ABoxBoardIo io;
     ABoxBoardIoInputs sample;
     ABoxBoardIoPort port = {&f, prepare, write_output, read_output,
-                           read_input, write_led, enter, leave, prepare_leds};
+                           read_input, write_led, enter, leave, prepare_leds, 0};
     unsigned i;
     f.output[0] = f.output[1] = f.output[2] = f.output[3] = 1;
     f.led[0] = f.led[1] = f.led[2] = 1;

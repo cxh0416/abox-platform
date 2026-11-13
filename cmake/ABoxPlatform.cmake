@@ -86,6 +86,158 @@ function(abox_platform_attach_components target)
     endforeach()
 endfunction()
 
+# Fixed STM32F105 vendor sources; the consumer supplies stm32f1xx_hal_conf.h,
+# startup and system clock initialization. Do not also link a second HAL copy.
+function(abox_platform_attach_stm32f105_vendor target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_stm32f105_vendor: target '${target}' does not exist")
+    endif()
+    set(vendor "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../vendor/stm32f1/hal-1.1.10")
+    target_include_directories(${target} PUBLIC
+        "${vendor}/STM32F1xx_HAL_Driver/Inc"
+        "${vendor}/STM32F1xx_HAL_Driver/Inc/Legacy"
+        "${vendor}/CMSIS/Device/ST/STM32F1xx/Include"
+        "${vendor}/CMSIS/Include")
+    target_compile_definitions(${target} PUBLIC USE_HAL_DRIVER STM32F105xC)
+    foreach(driver IN ITEMS gpio_ex tim tim_ex can rcc rcc_ex gpio dma cortex pwr flash flash_ex exti uart)
+        target_sources(${target} PRIVATE "${vendor}/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_${driver}.c")
+    endforeach()
+    target_sources(${target} PRIVATE "${vendor}/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c")
+endfunction()
+
+# ST board peripheral initialization and interrupt sources. Products provide
+# stm32f1xx_hal_conf.h, syscalls, the linker script and their App main.
+function(abox_platform_attach_stm32f105_board_sources target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_stm32f105_board_sources: target does not exist")
+    endif()
+    set(board "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/boards/abox_v2/stm32cubemx")
+    target_include_directories(${target} BEFORE PRIVATE "${board}/include")
+    foreach(source IN ITEMS gpio can dma usart stm32f1xx_it stm32f1xx_hal_msp
+            stm32f1xx_hal_timebase_tim system_stm32f1xx)
+        target_sources(${target} PRIVATE "${board}/src/${source}.c")
+    endforeach()
+    target_sources(${target} PRIVATE "${board}/startup_stm32f105xc.s")
+endfunction()
+
+# Explicit board startup for products using the standard App initialization.
+function(abox_platform_attach_board_startup target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_board_startup: target does not exist")
+    endif()
+    cmake_parse_arguments(ABOX_BOARD "" "HARDWARE" "" ${ARGN})
+    if(ABOX_BOARD_UNPARSED_ARGUMENTS OR ABOX_BOARD_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "abox_platform_attach_board_startup: invalid arguments")
+    endif()
+    if(ABOX_BOARD_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        target_sources(${target} PRIVATE
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/boards/abox_v2/board_stm32f105.c")
+    elseif(NOT ABOX_BOARD_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        message(FATAL_ERROR "abox_platform_attach_board_startup: unsupported HARDWARE")
+    endif()
+    # The GD startup implementation is in board_gd32f105.c, attached by
+    # abox_platform_attach_standard_port for the matching target.
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+endfunction()
+
+# Polling CAN port is opt-in and owns its two controllers and FIFO0.
+function(abox_platform_attach_can_port target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_can_port: target '${target}' does not exist")
+    endif()
+    cmake_parse_arguments(ABOX_CAN "" "HARDWARE" "" ${ARGN})
+    if(ABOX_CAN_UNPARSED_ARGUMENTS OR ABOX_CAN_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "abox_platform_attach_can_port: invalid arguments")
+    endif()
+    if(ABOX_CAN_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        set(mcu stm32f105)
+    elseif(ABOX_CAN_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        set(mcu gd32f105)
+        target_sources(${target} PRIVATE
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../vendor/gd32f10x/2.7.0/GD32F10x_standard_peripheral/Source/gd32f10x_can.c"
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../vendor/gd32f10x/2.7.0/GD32F10x_standard_peripheral/Source/gd32f10x_dbg.c")
+    else()
+        message(FATAL_ERROR "abox_platform_attach_can_port: unsupported HARDWARE")
+    endif()
+    target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/${mcu}/can_port_${mcu}.c")
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+    # The public port owns both controllers and FIFO0. Standard STM32 board
+    # startup must therefore leave the controllers for the port to initialize.
+    target_compile_definitions(${target} PRIVATE ABOX_CAN_PORT_ENABLED=1)
+endfunction()
+
+# Opt-in product serial-bus hardware adapter. Unsupported targets fail at
+# configure time rather than silently compiling the STM32 driver for GD.
+function(abox_platform_attach_serial_port target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_serial_port: target '${target}' does not exist")
+    endif()
+    cmake_parse_arguments(ABOX_SERIAL "" "HARDWARE" "" ${ARGN})
+    if(ABOX_SERIAL_UNPARSED_ARGUMENTS OR ABOX_SERIAL_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "abox_platform_attach_serial_port: invalid arguments")
+    endif()
+    if(ABOX_SERIAL_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        set(mcu stm32f105)
+    elseif(ABOX_SERIAL_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        set(mcu gd32f105)
+    else()
+        message(FATAL_ERROR "abox_platform_attach_serial_port: unsupported HARDWARE")
+    endif()
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/src/abox_serial_events.c"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/${mcu}/serial_port_${mcu}.c")
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+    target_link_libraries(${target} abox::core)
+endfunction()
+
+function(abox_platform_attach_target_identity target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_target_identity: target '${target}' does not exist")
+    endif()
+    cmake_parse_arguments(ABOX_ID "" "HARDWARE" "" ${ARGN})
+    if(ABOX_ID_UNPARSED_ARGUMENTS OR ABOX_ID_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "abox_platform_attach_target_identity: invalid arguments")
+    endif()
+    if(ABOX_ID_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        set(mcu stm32f105)
+    elseif(ABOX_ID_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        set(mcu gd32f105)
+    else()
+        message(FATAL_ERROR "abox_platform_attach_target_identity: unsupported HARDWARE")
+    endif()
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/src/abox_target_identity.c"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/${mcu}/mcu_${mcu}.c")
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+    target_link_libraries(${target} abox::enrollment abox::boot_v2_common)
+endfunction()
+
+# EC800 UART transport for the selected target; receive positions are passed
+# to the common circular-DMA consumer via ABoxModemPortEvents.
+function(abox_platform_attach_modem_port target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_modem_port: target '${target}' does not exist")
+    endif()
+    cmake_parse_arguments(ABOX_MODEM "" "HARDWARE" "" ${ARGN})
+    if(ABOX_MODEM_UNPARSED_ARGUMENTS OR ABOX_MODEM_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "abox_platform_attach_modem_port: invalid arguments")
+    endif()
+    if(ABOX_MODEM_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        set(mcu stm32f105)
+    elseif(ABOX_MODEM_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        set(mcu gd32f105)
+    else()
+        message(FATAL_ERROR "abox_platform_attach_modem_port: unsupported HARDWARE")
+    endif()
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/src/abox_modem_events.c"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/${mcu}/modem_port_${mcu}.c")
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+endfunction()
+
 # Opt-in standard App HAL/Flash/EC800 power port. Products with a different
 # board or Flash layout continue to supply their own ABoxPlatformPort.
 function(abox_platform_attach_standard_port target)
@@ -93,14 +245,20 @@ function(abox_platform_attach_standard_port target)
         message(FATAL_ERROR "abox_platform_attach_standard_port: target '${target}' does not exist")
     endif()
     cmake_parse_arguments(ABOX_PORT "" "HARDWARE" "" ${ARGN})
-    if(ABOX_PORT_UNPARSED_ARGUMENTS OR ABOX_PORT_KEYWORDS_MISSING_VALUES OR
-            NOT ABOX_PORT_HARDWARE STREQUAL "stm32f105_ec800_v1")
-        message(FATAL_ERROR "abox_platform_attach_standard_port: HARDWARE must be stm32f105_ec800_v1")
+    if(ABOX_PORT_UNPARSED_ARGUMENTS OR ABOX_PORT_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "abox_platform_attach_standard_port: invalid arguments")
     endif()
-    target_sources(${target} PRIVATE
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../targets/stm32f105_ec800_v1/platform_port_stm32f105.c")
-    target_include_directories(${target} PRIVATE
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../targets/stm32f105_ec800_v1/include")
+    if(ABOX_PORT_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        target_sources(${target} PRIVATE
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../targets/stm32f105_ec800_v1/platform_port_stm32f105.c")
+        target_include_directories(${target} PRIVATE
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../targets/stm32f105_ec800_v1/include")
+    elseif(ABOX_PORT_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        target_sources(${target} PRIVATE
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/boards/abox_v1/board_gd32f105.c")
+    else()
+        message(FATAL_ERROR "abox_platform_attach_standard_port: unsupported HARDWARE")
+    endif()
 endfunction()
 
 # Standard board link set for a new App. This does not create the product's
@@ -112,16 +270,49 @@ function(abox_platform_attach_standard_clock target)
     target_compile_definitions(${target} PRIVATE ABOX_STM32_MONOTONIC=1)
 endfunction()
 
+function(abox_platform_attach_gd32f105_runtime target)
+    if(NOT TARGET ${target} OR NOT CMAKE_CROSSCOMPILING)
+        message(FATAL_ERROR "abox_platform_attach_gd32f105_runtime: cross-compiled target required")
+    endif()
+    set(gd "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/gd32f105")
+    set(board "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/boards/abox_v1")
+    set(vendor "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../vendor/gd32f10x/2.7.0")
+    target_include_directories(${target} BEFORE PRIVATE "${gd}/include" "${board}/include"
+        "${vendor}/CMSIS" "${vendor}/CMSIS/GD/GD32F10x/Include"
+        "${vendor}/GD32F10x_standard_peripheral/Include")
+    target_compile_definitions(${target} PRIVATE ABOX_MCU_GD32F105=1 GD32F10X_CL HXTAL_VALUE=8000000U)
+    target_sources(${target} PRIVATE "${gd}/startup_gd32f105.c" "${gd}/flash_gd32f105.c"
+        "${gd}/monotonic_gd32f105.c"
+        "${vendor}/GD32F10x_standard_peripheral/Source/gd32f10x_fmc.c"
+        "${vendor}/GD32F10x_standard_peripheral/Source/gd32f10x_gpio.c"
+        "${vendor}/GD32F10x_standard_peripheral/Source/gd32f10x_rcu.c"
+        "${vendor}/GD32F10x_standard_peripheral/Source/gd32f10x_usart.c"
+        "${vendor}/GD32F10x_standard_peripheral/Source/gd32f10x_dma.c"
+        "${vendor}/GD32F10x_standard_peripheral/Source/gd32f10x_timer.c")
+    option(ABOX_GD_FLASH_READONLY_TEST "GD bench App: disable all flash mutations" OFF)
+    if(ABOX_GD_FLASH_READONLY_TEST)
+        target_compile_definitions(${target} PRIVATE ABOX_GD_FLASH_READONLY_TEST=1)
+        set_target_properties(${target} PROPERTIES OUTPUT_NAME ABox_GD_App_Readonly_Bench)
+        target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../tests/gd32_boot_ram_guard.c")
+        target_link_options(${target} PRIVATE -Wl,--wrap=ABoxGd32Flash_Begin
+            -Wl,--wrap=ABoxGd32Flash_Write -Wl,--wrap=ABoxGd32Flash_ErasePage)
+    endif()
+    target_link_libraries(${target} m)
+endfunction()
+
 function(abox_platform_attach_standard_app target)
-    cmake_parse_arguments(ABOX_APP "" "PRODUCT_CONFIG_DIR;SCHEDULER" "" ${ARGN})
+    cmake_parse_arguments(ABOX_APP "" "PRODUCT_CONFIG_DIR;SCHEDULER;HARDWARE" "" ${ARGN})
     if(ABOX_APP_UNPARSED_ARGUMENTS OR ABOX_APP_KEYWORDS_MISSING_VALUES OR
             NOT ABOX_APP_PRODUCT_CONFIG_DIR OR NOT ABOX_APP_SCHEDULER)
         message(FATAL_ERROR "abox_platform_attach_standard_app: PRODUCT_CONFIG_DIR and SCHEDULER are required")
     endif()
+    if(NOT ABOX_APP_HARDWARE)
+        set(ABOX_APP_HARDWARE stm32f105_ec800_v1)
+    endif()
     set(ABOX_PRODUCT_CONFIG_DIR "${ABOX_APP_PRODUCT_CONFIG_DIR}")
     abox_platform_attach_components(${target}
         SCHEDULER ${ABOX_APP_SCHEDULER}
-        HARDWARE stm32f105_ec800_v1
+        HARDWARE ${ABOX_APP_HARDWARE}
         COMPONENTS core cjson board_io ec_power ec800 ec800_ufs
                    ec800_command_port ec800_tls mqtt_tls mqtt_runtime
                    mqtt_trial mqtt_v4 mqtt_ec800_rx mqtt_ec800
@@ -133,9 +324,65 @@ function(abox_platform_attach_standard_app target)
             "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../components/ec800/src/abox_psk_station.c")
         target_compile_definitions(${target} PRIVATE ABOX_PSK_STATION=1)
     endif()
-    abox_platform_attach_standard_port(${target} HARDWARE stm32f105_ec800_v1)
-    target_sources(${target} PRIVATE
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../targets/stm32f105_ec800_v1/enrollment_identity_stm32f105.c")
+    abox_platform_attach_standard_port(${target} HARDWARE ${ABOX_APP_HARDWARE})
+    if(ABOX_APP_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        target_sources(${target} PRIVATE
+            "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../targets/stm32f105_ec800_v1/enrollment_identity_stm32f105.c")
+    endif()
+endfunction()
+
+# Single entry for products using the standard F105/EC800 board contract.
+# The consumer supplies App sources, boot_cfg.h and the linker script. An
+# optional HAL_CONFIG_DIR overrides the standard ST config. CAN is opt-in;
+# historical STM32 CAN startup remains unchanged.
+function(abox_platform_attach_f105_app target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_f105_app: target does not exist")
+    endif()
+    cmake_parse_arguments(ABOX_F105 "CAN" "HARDWARE;PRODUCT_CONFIG_DIR;HAL_CONFIG_DIR;SCHEDULER" "" ${ARGN})
+    if(ABOX_F105_UNPARSED_ARGUMENTS OR ABOX_F105_KEYWORDS_MISSING_VALUES OR
+            NOT ABOX_F105_HARDWARE OR NOT ABOX_F105_PRODUCT_CONFIG_DIR)
+        message(FATAL_ERROR "abox_platform_attach_f105_app: HARDWARE and PRODUCT_CONFIG_DIR are required")
+    endif()
+    if(NOT ABOX_F105_SCHEDULER)
+        set(ABOX_F105_SCHEDULER BAREMETAL)
+    endif()
+    if(NOT ABOX_F105_SCHEDULER STREQUAL "BAREMETAL")
+        message(FATAL_ERROR "abox_platform_attach_f105_app: only BAREMETAL is supported")
+    endif()
+    get_target_property(already_attached ${target} ABOX_F105_APP_ATTACHED)
+    if(already_attached)
+        message(FATAL_ERROR "abox_platform_attach_f105_app: target already attached")
+    endif()
+    if(ABOX_F105_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        if(NOT ABOX_F105_HAL_CONFIG_DIR)
+            set(ABOX_F105_HAL_CONFIG_DIR
+                "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/boards/abox_v2/hal_config")
+        endif()
+        if(NOT EXISTS "${ABOX_F105_HAL_CONFIG_DIR}/stm32f1xx_hal_conf.h")
+            message(FATAL_ERROR "abox_platform_attach_f105_app: HAL_CONFIG_DIR must contain stm32f1xx_hal_conf.h")
+        endif()
+        target_include_directories(${target} PRIVATE "${ABOX_F105_HAL_CONFIG_DIR}")
+        abox_platform_attach_stm32f105_vendor(${target})
+        abox_platform_attach_stm32f105_board_sources(${target})
+        abox_platform_attach_standard_clock(${target})
+        target_link_libraries(${target} m)
+    elseif(ABOX_F105_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        abox_platform_attach_gd32f105_runtime(${target})
+    else()
+        message(FATAL_ERROR "abox_platform_attach_f105_app: unsupported HARDWARE '${ABOX_F105_HARDWARE}'")
+    endif()
+    abox_platform_attach_standard_app(${target}
+        PRODUCT_CONFIG_DIR "${ABOX_F105_PRODUCT_CONFIG_DIR}" SCHEDULER ${ABOX_F105_SCHEDULER}
+        HARDWARE ${ABOX_F105_HARDWARE})
+    abox_platform_attach_board_startup(${target} HARDWARE ${ABOX_F105_HARDWARE})
+    abox_platform_attach_serial_port(${target} HARDWARE ${ABOX_F105_HARDWARE})
+    abox_platform_attach_modem_port(${target} HARDWARE ${ABOX_F105_HARDWARE})
+    abox_platform_attach_target_identity(${target} HARDWARE ${ABOX_F105_HARDWARE})
+    if(ABOX_F105_CAN)
+        abox_platform_attach_can_port(${target} HARDWARE ${ABOX_F105_HARDWARE})
+    endif()
+    set_property(TARGET ${target} PROPERTY ABOX_F105_APP_ATTACHED TRUE)
 endfunction()
 
 function(abox_platform_attach target)

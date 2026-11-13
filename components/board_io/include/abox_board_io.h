@@ -27,6 +27,19 @@ typedef enum {
     ABOX_BOARD_IO_INPUT_COUNT
 } ABoxBoardIoInput;
 
+/* External connector positions, not MCU port B pin numbers. */
+typedef enum {
+    ABOX_BOARD_TERMINAL_B4 = 4, ABOX_BOARD_TERMINAL_B5,
+    ABOX_BOARD_TERMINAL_B6, ABOX_BOARD_TERMINAL_B7,
+    ABOX_BOARD_TERMINAL_B8, ABOX_BOARD_TERMINAL_B9,
+    ABOX_BOARD_TERMINAL_B10, ABOX_BOARD_TERMINAL_B11
+} ABoxBoardTerminal;
+
+/* Instantaneous input level for a physical connector terminal. The selected
+ * board returns zero for unsupported terminals or a null output pointer;
+ * on failure it does not change *level. Initialize board inputs first. */
+int ABoxBoardIo_ReadTerminal(ABoxBoardTerminal terminal, uint8_t *level);
+
 typedef enum {
     ABOX_BOARD_IO_LED1 = 0,
     ABOX_BOARD_IO_LED2,
@@ -62,7 +75,13 @@ typedef struct {
     void (*exit_critical)(void *context, uint32_t key);
     /* Optional LED-only preparation. Must not touch inputs or power outputs. */
     int (*prepare_leds)(void *context, uint8_t led_mask);
+    /* Optional instantaneous MCU pin level; distinct from the output latch.
+     * Neither reading confirms the state of an external load. */
+    int (*read_output_pin)(void *context, ABoxBoardIoOutput output, uint8_t *level);
 } ABoxBoardIoPort;
+
+/* Supplied by the selected hardware target after board GPIO initialization. */
+const ABoxBoardIoPort *ABoxBoardIo_HardwarePort(void);
 
 typedef struct {
     uint8_t raw_mask;

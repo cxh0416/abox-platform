@@ -1,4 +1,87 @@
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_executable(abox_boot_v2_installer_test abox_boot_v2_installer_test.c)
+target_link_libraries(abox_boot_v2_installer_test PRIVATE abox::boot_v2_boot)
+add_test(NAME abox_boot_v2_installer_test COMMAND abox_boot_v2_installer_test)
+add_executable(gd32f105_boot_ufs_test gd32f105_boot_ufs_test.c
+    ../targets/gd32f105_abox_boot/ufs_at.c)
+target_include_directories(gd32f105_boot_ufs_test PRIVATE ../targets/gd32f105_abox_boot)
+add_test(NAME gd32f105_boot_ufs_test COMMAND gd32f105_boot_ufs_test)
+add_executable(gd32f105_flash_test gd32f105_flash_test.c
+    ../hardware/mcu/gd32f105/flash_gd32f105.c)
+target_include_directories(gd32f105_flash_test PRIVATE gd32_flash_stub
+    ../hardware/mcu/gd32f105/include)
+add_test(NAME gd32f105_flash_test COMMAND gd32f105_flash_test)
+add_executable(gd32f105_can_test gd32f105_can_test.c ../hardware/mcu/gd32f105/can_port_gd32f105.c)
+target_include_directories(gd32f105_can_test PRIVATE gd32_can_stub ../hardware/api/include)
+add_test(NAME gd32f105_can_test COMMAND gd32f105_can_test)
+add_executable(stm32f105_can_test stm32f105_can_test.c ../hardware/mcu/stm32f105/can_port_stm32f105.c)
+target_include_directories(stm32f105_can_test PRIVATE stm32_can_stub ../hardware/api/include)
+add_test(NAME stm32f105_can_test COMMAND stm32f105_can_test)
+add_executable(gd32f105_v1_board_test gd32f105_v1_board_test.c
+    ../hardware/mcu/gd32f105/board_io_gd32f105_v1.c)
+target_include_directories(gd32f105_v1_board_test PRIVATE gd32_board_stub
+    ../hardware/boards/abox_v1/include)
+target_link_libraries(gd32f105_v1_board_test PRIVATE abox::board_io)
+add_test(NAME gd32f105_v1_board_test COMMAND gd32f105_v1_board_test)
+add_executable(stm32f105_board_startup_test stm32f105_board_startup_test.c
+    ../hardware/boards/abox_v2/board_stm32f105.c)
+target_include_directories(stm32f105_board_startup_test PRIVATE stm32_board_stub
+    ../hardware/api/include ../components/board_io/include ../targets/stm32f105_ec800_v1/include)
+add_test(NAME stm32f105_board_startup_test COMMAND stm32f105_board_startup_test)
+add_executable(stm32f105_board_can_port_test stm32f105_board_startup_test.c
+    ../hardware/boards/abox_v2/board_stm32f105.c)
+target_include_directories(stm32f105_board_can_port_test PRIVATE stm32_board_stub
+    ../hardware/api/include ../components/board_io/include ../targets/stm32f105_ec800_v1/include)
+target_compile_definitions(stm32f105_board_can_port_test PRIVATE ABOX_CAN_PORT_ENABLED=1)
+add_test(NAME stm32f105_board_can_port_test COMMAND stm32f105_board_can_port_test)
+add_executable(stm32f105_board_serial_disabled_test stm32f105_board_startup_test.c
+    ../hardware/boards/abox_v2/board_stm32f105.c)
+target_include_directories(stm32f105_board_serial_disabled_test PRIVATE stm32_board_stub
+    ../hardware/api/include ../components/board_io/include ../targets/stm32f105_ec800_v1/include)
+target_compile_definitions(stm32f105_board_serial_disabled_test PRIVATE ABOX_SERIAL_RX_DISABLED=1)
+add_test(NAME stm32f105_board_serial_disabled_test COMMAND stm32f105_board_serial_disabled_test)
+add_executable(stm32f105_board_can_integration_test stm32f105_board_startup_test.c
+    ../hardware/boards/abox_v2/board_stm32f105.c ../hardware/mcu/stm32f105/can_port_stm32f105.c)
+target_include_directories(stm32f105_board_can_integration_test PRIVATE stm32_can_stub stm32_board_stub
+    ../hardware/api/include ../components/board_io/include ../targets/stm32f105_ec800_v1/include)
+target_compile_definitions(stm32f105_board_can_integration_test PRIVATE
+    ABOX_CAN_PORT_ENABLED=1 ABOX_CAN_PORT_INTEGRATION=1)
+add_test(NAME stm32f105_board_can_integration_test COMMAND stm32f105_board_can_integration_test)
+add_executable(stm32f105_serial_port_test stm32f105_serial_port_test.c
+    ../hardware/mcu/stm32f105/serial_port_stm32f105.c)
+target_include_directories(stm32f105_serial_port_test PRIVATE stm32_serial_stub ../hardware/api/include)
+add_test(NAME stm32f105_serial_port_test COMMAND stm32f105_serial_port_test)
+add_executable(gd32f105_serial_test gd32f105_serial_test.c
+    ../hardware/mcu/gd32f105/serial_port_gd32f105.c
+    ../hardware/api/src/abox_serial_events.c)
+target_include_directories(gd32f105_serial_test PRIVATE gd32_uart_stub
+    ../hardware/mcu/gd32f105/include ../hardware/api/include ../components/core/include)
+add_test(NAME gd32f105_serial_test COMMAND gd32f105_serial_test)
+add_executable(gd32f105_modem_test gd32f105_modem_test.c
+    ../hardware/mcu/gd32f105/modem_port_gd32f105.c ../hardware/api/src/abox_modem_events.c
+    ../components/ec800/src/abox_ec800_rx.c)
+target_include_directories(gd32f105_modem_test PRIVATE gd32_modem_stub
+    ../hardware/mcu/gd32f105/include ../hardware/api/include
+    ../components/core/include ../components/ec800/include)
+add_test(NAME gd32f105_modem_test COMMAND gd32f105_modem_test)
+add_executable(gd32f105_monotonic_test gd32f105_monotonic_test.c)
+target_include_directories(gd32f105_monotonic_test PRIVATE gd32_timer_stub
+    ../hardware/mcu/gd32f105/include)
+add_test(NAME gd32f105_monotonic_test COMMAND gd32f105_monotonic_test)
+find_program(ABOX_ARM_GCC arm-none-eabi-gcc)
+if(ABOX_ARM_GCC)
+    add_test(NAME f105_example_build COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/f105_example_build_test.py ${CMAKE_BINARY_DIR})
+    add_test(NAME gd32f105_vendor_compile COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/gd32f105_vendor_compile.py
+        ${ABOX_ARM_GCC} ${CMAKE_BINARY_DIR})
+    add_test(NAME gd32f105_boot_build COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/gd32f105_boot_build_test.py ${CMAKE_BINARY_DIR})
+    add_test(NAME gd32f105_hardware_bench_build COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/gd32f105_uart_bench_build_test.py ${CMAKE_BINARY_DIR})
+    add_test(NAME stm32f105_can_vendor_compile COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/stm32f105_can_vendor_compile.py ${ABOX_ARM_GCC} ${CMAKE_BINARY_DIR})
+endif()
 add_executable(stm32f105_flash_begin_test stm32f105_flash_begin_test.c)
 target_include_directories(stm32f105_flash_begin_test PRIVATE
     stm32_port_stub ../components/core/include ../components/ec_power/include
