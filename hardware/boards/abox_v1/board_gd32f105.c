@@ -20,6 +20,10 @@ static int configure_clock(void)
      * PLL while it still clocks the CPU if a different entry path is used. */
     if (rcu_system_clock_source_get() != RCU_SCSS_IRC8M ||
         rcu_flag_get(RCU_FLAG_PLLSTB) != RESET) return 0;
+    /* Do not inherit the Boot's Flash timing: the App selects 72 MHz and
+     * may follow a Boot configured at a lower frequency. */
+    fmc_wscnt_set(WS_WSCNT_2);
+    if ((FMC_WS & FMC_WS_WSCNT) != WS_WSCNT_2) return 0;
     rcu_osci_on(RCU_HXTAL);
     if (rcu_osci_stab_wait(RCU_HXTAL) != SUCCESS) return 0;
     rcu_ahb_clock_config(RCU_AHB_CKSYS_DIV1);

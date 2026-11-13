@@ -7,6 +7,7 @@ extern TestFlash test_flash;
 #define FLASH (&test_flash)
 #define FLASH_CR_LOCK 0x80U
 #define FLASH_TYPEPROGRAM_WORD 2U
+#define FLASH_TYPEPROGRAM_HALFWORD 1U
 #define FLASH_TYPEERASE_PAGES 0U
 typedef struct { uint32_t TypeErase, Banks, PageAddress, NbPages; } FLASH_EraseInitTypeDef;
 typedef struct { int unused; } UART_HandleTypeDef;
