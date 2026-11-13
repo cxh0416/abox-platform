@@ -212,6 +212,23 @@ function(abox_platform_attach_gd32_watchdog target)
     target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
 endfunction()
 
+function(abox_platform_attach_watchdog_port target)
+    cmake_parse_arguments(ABOX_WATCHDOG "" "HARDWARE" "" ${ARGN})
+    if(NOT TARGET ${target} OR ABOX_WATCHDOG_UNPARSED_ARGUMENTS OR ABOX_WATCHDOG_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "abox_platform_attach_watchdog_port: invalid arguments")
+    endif()
+    if(ABOX_WATCHDOG_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        set(mcu stm32f105)
+    elseif(ABOX_WATCHDOG_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        set(mcu gd32f105)
+    else()
+        message(FATAL_ERROR "abox_platform_attach_watchdog_port: unsupported HARDWARE")
+    endif()
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/${mcu}/watchdog_port_${mcu}.c")
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+endfunction()
+
 # Opt-in product serial-bus hardware adapter. Unsupported targets fail at
 # configure time rather than silently compiling the STM32 driver for GD.
 function(abox_platform_attach_serial_port target)

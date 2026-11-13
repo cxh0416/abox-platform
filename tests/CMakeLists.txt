@@ -77,6 +77,10 @@ add_executable(gd32f105_serial_test gd32f105_serial_test.c
 target_include_directories(gd32f105_serial_test PRIVATE gd32_uart_stub
     ../hardware/mcu/gd32f105/include ../hardware/api/include ../components/core/include)
 add_test(NAME gd32f105_serial_test COMMAND gd32f105_serial_test)
+add_executable(stm32f105_watchdog_test stm32f105_watchdog_test.c
+    ../hardware/mcu/stm32f105/watchdog_port_stm32f105.c)
+target_include_directories(stm32f105_watchdog_test PRIVATE stm32_watchdog_stub ../hardware/api/include)
+add_test(NAME stm32f105_watchdog_test COMMAND stm32f105_watchdog_test)
 add_executable(abox_serial_transaction_test abox_serial_transaction_test.c
     ../hardware/api/src/abox_serial_transaction.c)
 target_include_directories(abox_serial_transaction_test PRIVATE ../hardware/api/include)

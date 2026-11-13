@@ -23,6 +23,7 @@ STM32 板级启动和 V2 输入引脚表在 `boards/abox_v2/`；兼容既有产�
 - `abox_modem_port.h`：EC800 串口及循环 DMA 接收位置通知；缓冲区由调用方持有。
 - `abox_can_port.h`：可选 CAN 轮询接口，发送成功仅表示进入发送队列，限制见[CAN 说明](../docs/internal/can-port.md)。
 - `abox_mcu.h`、`abox_target_identity.h`：芯片 UID 与目标身份。
+- `abox_watchdog_port.h`：可选独立看门狗初始化、刷新与调试暂停；按硬件选择后端，实际超时取决于低速时钟误差。
 - Flash、单调时间和临界区复用 `ABoxPlatformPort`；板载 GPIO 使用 `ABoxBoardIoPort`。按外部端子使用 `ABoxBoardIo_ReadTerminal`；不可用的端子返回失败，不修改输出值。
 
 对于符合现有 F105/EC800 板卡合同的新产品，先 `add_subdirectory` 引入平台，然后对产品可执行目标调用一次：
