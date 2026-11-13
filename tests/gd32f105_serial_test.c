@@ -12,6 +12,7 @@ static uint16_t sent_count, rx_count, rearm_size;
 static unsigned rx_events, tx_events, error_events;
 
 void rcu_periph_clock_enable(uint32_t p) { (void)p; }
+uint32_t rcu_clock_freq_get(uint32_t clock) { assert(clock == CK_APB1); return 36000000U; }
 void gpio_init(uint32_t p, uint32_t m, uint32_t s, uint32_t pins) { (void)p; (void)m; (void)s; (void)pins; }
 void usart_deinit(uint32_t p) { (void)p; enabled = 0U; }
 void usart_baudrate_set(uint32_t p, uint32_t baud) { (void)p; baud_configured = baud; }
@@ -79,6 +80,17 @@ int main(void)
     assert(!ABoxSerialPort_SendBlocking(data, sizeof(data), 3U));
     assert(ABoxSerialPort_Send(data, sizeof(data)));
     ABoxSerialPort_AbortTx();
-    ABoxSerialPort_SetConfig(9600U); assert(!ABoxSerialPort_Init());
+    assert(ABoxSerialPort_Deinit());
+    ABoxSerialPort_SetConfig(19200U);
+    assert(ABoxSerialPort_IsConfig(19200U));
+    assert(ABoxSerialPort_Init() && baud_configured == 19200U);
+    assert(ABoxSerialPort_StartRx(buffer, sizeof(buffer)));
+    assert(!ABoxSerialPort_Init());
+    assert(ABoxSerialPort_Deinit());
+    ABoxSerialPort_SetConfig(9600U); assert(ABoxSerialPort_Init() && baud_configured == 9600U);
+    assert(ABoxSerialPort_Deinit());
+    ABoxSerialPort_SetConfig(0U); assert(!ABoxSerialPort_Init());
+    ABoxSerialPort_SetConfig(1U); assert(!ABoxSerialPort_Init());
+    ABoxSerialPort_SetConfig(4000000U); assert(!ABoxSerialPort_Init());
     return 0;
 }

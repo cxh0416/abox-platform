@@ -22,7 +22,8 @@ void ABoxSerialPort_SetConfig(uint32_t baud)
     huart5.Init.StopBits = UART_STOPBITS_1;
 }
 
-int ABoxSerialPort_Init(void) { return HAL_UART_Init(&huart5) == HAL_OK; }
+int ABoxSerialPort_Init(void)
+{ return huart5.Init.BaudRate != 0U && HAL_UART_Init(&huart5) == HAL_OK; }
 int ABoxSerialPort_StartRx(uint8_t *data, uint16_t length)
 {
     uint8_t *previous;

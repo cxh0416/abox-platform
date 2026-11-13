@@ -24,7 +24,13 @@ void ABoxSerialPort_SetConfig(uint32_t baud) { g_baud = baud; }
 
 int ABoxSerialPort_Init(void)
 {
-    if (g_baud != 115200U) return 0;
+    uint32_t clock = rcu_clock_freq_get(CK_APB1);
+    uint64_t divisor;
+    if (!g_baud || !clock || g_rx_active || g_tx_active) return 0;
+    /* UART4 uses APB1 and 16x oversampling. Reject unrepresentable baud
+     * rates before the vendor helper divides or truncates the divisor. */
+    divisor = ((uint64_t)clock + g_baud / 2U) / g_baud;
+    if (divisor < 16U || divisor > 65535U) return 0;
     rcu_periph_clock_enable(RCU_GPIOC);
     rcu_periph_clock_enable(RCU_GPIOD);
     rcu_periph_clock_enable(RCU_UART4);

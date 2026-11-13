@@ -7,6 +7,7 @@ typedef enum { RESET = 0, SET = 1 } FlagStatus;
 #define RCU_GPIOC 2U
 #define RCU_GPIOD 3U
 #define RCU_UART4 4U
+#define CK_APB1 1U
 #define UART4 4U
 #define UART4_IRQn 53
 #define GPIO_MODE_AF_PP 0x18U
@@ -38,6 +39,7 @@ typedef enum { RESET = 0, SET = 1 } FlagStatus;
 extern uint32_t test_usart_status;
 #define USART_STAT(uart) (test_usart_status)
 void rcu_periph_clock_enable(uint32_t port);
+uint32_t rcu_clock_freq_get(uint32_t clock);
 void gpio_init(uint32_t port, uint32_t mode, uint32_t speed, uint32_t pins);
 void usart_deinit(uint32_t uart);
 void usart_baudrate_set(uint32_t uart, uint32_t baud);

@@ -22,6 +22,10 @@ int HAL_UART_Transmit(UART_HandleTypeDef *h, uint8_t *p, uint16_t n, uint32_t ti
 int main(void)
 {
     uint8_t first[8], second[8];
+    ABoxSerialPort_SetConfig(19200U);
+    assert(ABoxSerialPort_IsConfig(19200U) && ABoxSerialPort_Init());
+    ABoxSerialPort_SetConfig(0U);
+    assert(!ABoxSerialPort_Init());
     assert(!ABoxSerialPort_StartRx(0, sizeof(first)));
     assert(ABoxSerialPort_StartRx(first, sizeof(first)));
     assert(ABoxStm32Serial_RxBuffer() == first && primask == 0U);

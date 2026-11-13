@@ -21,6 +21,8 @@ void ABoxSerialPort_NotifyError(void);
  * completion or cancellation callback. The board routes RX, TX complete and
  * errors to the product's existing callbacks. */
 int ABoxSerialPort_IsConfig(uint32_t baud);
+/* Stop active transfers before deinit/reconfiguration. SetConfig selects
+ * 8N1; Init reports failure for an unsupported configuration. */
 int ABoxSerialPort_Deinit(void);
 void ABoxSerialPort_SetConfig(uint32_t baud);
 int ABoxSerialPort_Init(void);
