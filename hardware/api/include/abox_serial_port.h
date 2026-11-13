@@ -28,6 +28,8 @@ void ABoxSerialPort_SetConfig(uint32_t baud);
 int ABoxSerialPort_Init(void);
 int ABoxSerialPort_StartRx(uint8_t *data, uint16_t length);
 int ABoxSerialPort_AbortRx(void);
+/* Call only after aborting RX; discard a stale hardware receive byte/status. */
+void ABoxSerialPort_FlushRx(void);
 int ABoxSerialPort_Send(const uint8_t *data, uint16_t length);
 void ABoxSerialPort_AbortTx(void);
 int ABoxSerialPort_SendBlocking(const uint8_t *data, uint16_t length, uint32_t timeout_ms);

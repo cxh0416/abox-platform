@@ -237,6 +237,15 @@ function(abox_platform_attach_serial_port target)
     target_link_libraries(${target} abox::core)
 endfunction()
 
+function(abox_platform_attach_serial_transaction target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_serial_transaction: target does not exist")
+    endif()
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/src/abox_serial_transaction.c")
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+endfunction()
+
 function(abox_platform_attach_target_identity target)
     if(NOT TARGET ${target})
         message(FATAL_ERROR "abox_platform_attach_target_identity: target '${target}' does not exist")

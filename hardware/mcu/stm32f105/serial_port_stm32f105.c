@@ -40,6 +40,7 @@ int ABoxSerialPort_StartRx(uint8_t *data, uint16_t length)
     return ok;
 }
 int ABoxSerialPort_AbortRx(void) { return HAL_UART_AbortReceive(&huart5) == HAL_OK; }
+void ABoxSerialPort_FlushRx(void) { __HAL_UART_FLUSH_DRREGISTER(&huart5); }
 int ABoxSerialPort_Send(const uint8_t *data, uint16_t length)
 { return HAL_UART_Transmit_IT(&huart5, (uint8_t *)data, length) == HAL_OK; }
 void ABoxSerialPort_AbortTx(void) { (void)HAL_UART_AbortTransmit(&huart5); }

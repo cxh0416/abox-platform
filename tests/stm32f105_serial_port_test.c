@@ -5,6 +5,7 @@
 UART_HandleTypeDef huart5;
 static uint32_t primask;
 static int receive_result;
+static int flush_calls;
 uint8_t *ABoxStm32Serial_RxBuffer(void);
 uint32_t __get_PRIMASK(void) { return primask; }
 void __disable_irq(void) { primask = 1U; }
@@ -14,6 +15,7 @@ int HAL_UARTEx_ReceiveToIdle_IT(UART_HandleTypeDef *h, uint8_t *data, uint16_t s
 int HAL_UART_DeInit(UART_HandleTypeDef *h) { (void)h; return HAL_OK; }
 int HAL_UART_Init(UART_HandleTypeDef *h) { (void)h; return HAL_OK; }
 int HAL_UART_AbortReceive(UART_HandleTypeDef *h) { (void)h; return HAL_OK; }
+void test_flush_rx(UART_HandleTypeDef *h) { assert(h == &huart5); ++flush_calls; }
 int HAL_UART_Transmit_IT(UART_HandleTypeDef *h, uint8_t *p, uint16_t n)
 { (void)h; (void)p; (void)n; return HAL_OK; }
 int HAL_UART_AbortTransmit(UART_HandleTypeDef *h) { (void)h; return HAL_OK; }
@@ -26,6 +28,7 @@ int main(void)
     assert(ABoxSerialPort_IsConfig(19200U) && ABoxSerialPort_Init());
     ABoxSerialPort_SetConfig(0U);
     assert(!ABoxSerialPort_Init());
+    ABoxSerialPort_FlushRx(); assert(flush_calls == 1);
     assert(!ABoxSerialPort_StartRx(0, sizeof(first)));
     assert(ABoxSerialPort_StartRx(first, sizeof(first)));
     assert(ABoxStm32Serial_RxBuffer() == first && primask == 0U);

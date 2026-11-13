@@ -82,6 +82,12 @@ int ABoxSerialPort_AbortRx(void)
     return 1;
 }
 
+void ABoxSerialPort_FlushRx(void)
+{
+    (void)USART_STAT(SERIAL_UART);
+    (void)usart_data_receive(SERIAL_UART);
+}
+
 int ABoxSerialPort_Send(const uint8_t *data, uint16_t length)
 {
     uint32_t key;

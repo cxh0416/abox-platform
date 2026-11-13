@@ -54,6 +54,8 @@ int main(void)
     const ABoxSerialPortEvents events = {on_rx, on_tx, on_error};
     ABoxSerialPort_SetEvents(&events);
     assert(ABoxSerialPort_Init() && baud_configured == 115200U);
+    test_usart_status = USART_STAT_RBNE | USART_STAT_ORERR;
+    ABoxSerialPort_FlushRx(); assert(test_usart_status == 0U);
     assert(!ABoxSerialPort_StartRx(0, 4U));
     assert(ABoxSerialPort_StartRx(buffer, sizeof(buffer)));
     assert(!ABoxSerialPort_StartRx(buffer, sizeof(buffer)));

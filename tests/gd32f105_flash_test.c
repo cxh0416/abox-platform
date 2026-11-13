@@ -17,6 +17,8 @@ void fmc_unlock(void) { ++unlocks; if (!unlock_fails) test_fmc_ctl0 &= ~FMC_CTL0
 void fmc_lock(void) { ++locks; test_fmc_ctl0 |= FMC_CTL0_LK; }
 fmc_state_enum fmc_word_program(uint32_t address, uint32_t word)
 { ++writes; last_address = address; last_word = word; return result; }
+fmc_state_enum fmc_halfword_program(uint32_t address, uint16_t halfword)
+{ ++writes; last_address = address; last_word = halfword; return result; }
 fmc_state_enum fmc_page_erase(uint32_t address)
 { ++erases; last_address = address; return result; }
 
@@ -37,6 +39,9 @@ int main(void)
     assert(!writes);
     assert(ABoxGd32Flash_Write(0, 0x0803FFFCU, bytes, 4U));
     assert(writes == 1 && last_address == 0x0803FFFCU && last_word == 0x78563412U);
+    assert(ABoxGd32Flash_Write(0, 0x0803FFFEU, bytes, 2U));
+    assert(writes == 2 && last_address == 0x0803FFFEU && last_word == 0x3412U);
+    assert(!ABoxGd32Flash_Write(0, 0x0803FFFFU, bytes, 2U));
     assert(!ABoxGd32Flash_ErasePage(0, 0x0803F801U));
     assert(!ABoxGd32Flash_ErasePage(0, 0x08040000U));
     assert(!erases);

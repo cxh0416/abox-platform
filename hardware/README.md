@@ -19,6 +19,7 @@ STM32 板级启动和 V2 输入引脚表在 `boards/abox_v2/`；兼容既有产�
 ## 接口与产品接入
 
 - `abox_serial_port.h`：产品串口收发与回调；回调在中断中执行，异步发送缓冲区在完成或取消前必须保持有效。停止传输并反初始化后可设置 8N1 波特率再初始化；GD UART4 按实际 APB1 时钟及 16 倍采样的 16 位分频范围校验，默认 115200，也支持 19200 等可表示的速率。实际波特率由硬件分频取整，需按外设容差核对。
+- `abox_serial_transaction.h`：可选单端口请求/应答接收队列；发送前开始接收，保留空闲线分段并在溢出或接收错误时报告失败。使用 `abox_platform_attach_serial_transaction` 接入，产品任务负责超时与协议解析。
 - `abox_modem_port.h`：EC800 串口及循环 DMA 接收位置通知；缓冲区由调用方持有。
 - `abox_can_port.h`：可选 CAN 轮询接口，发送成功仅表示进入发送队列，限制见[CAN 说明](../docs/internal/can-port.md)。
 - `abox_mcu.h`、`abox_target_identity.h`：芯片 UID 与目标身份。

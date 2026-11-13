@@ -15,6 +15,8 @@ int HAL_UART_DeInit(UART_HandleTypeDef *);
 int HAL_UART_Init(UART_HandleTypeDef *);
 int HAL_UARTEx_ReceiveToIdle_IT(UART_HandleTypeDef *, uint8_t *, uint16_t);
 int HAL_UART_AbortReceive(UART_HandleTypeDef *);
+void test_flush_rx(UART_HandleTypeDef *);
+#define __HAL_UART_FLUSH_DRREGISTER(uart) test_flush_rx(uart)
 int HAL_UART_Transmit_IT(UART_HandleTypeDef *, uint8_t *, uint16_t);
 int HAL_UART_AbortTransmit(UART_HandleTypeDef *);
 int HAL_UART_Transmit(UART_HandleTypeDef *, uint8_t *, uint16_t, uint32_t);

@@ -55,6 +55,8 @@ uint32_t ABox_PortGetTickMs(void);
 uint64_t ABox_PortGetMonotonicMs(void);
 int ABox_PortUartWrite(const uint8_t *data, uint32_t length);
 int ABox_PortFlashBegin(void);
+/* Selected target may support aligned halfword (2 bytes) as well as word
+ * (4 bytes) programming; unsupported sizes fail. Call between Begin/End. */
 int ABox_PortFlashWrite(uint32_t address, const uint8_t *data, uint32_t length);
 int ABox_PortFlashErasePage(uint32_t address);
 void ABox_PortFlashEnd(void);

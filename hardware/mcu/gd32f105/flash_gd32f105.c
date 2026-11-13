@@ -25,10 +25,15 @@ int ABoxGd32Flash_Begin(void *context)
 int ABoxGd32Flash_Write(void *context, uint32_t address, const uint8_t *data, uint32_t length)
 {
     uint32_t word;
+    uint16_t halfword;
     (void)context;
-    if (!data || length != sizeof(word) || (address & 3U) ||
-        address < ABOX_GD_FLASH_START || address > ABOX_GD_FLASH_END - sizeof(word) ||
+    if (!data || (length != sizeof(word) && length != sizeof(halfword)) || (address & (length - 1U)) ||
+        address < ABOX_GD_FLASH_START || address > ABOX_GD_FLASH_END - length ||
         (FMC_CTL0 & FMC_CTL0_LK) != 0U) return 0;
+    if (length == sizeof(halfword)) {
+        memcpy(&halfword, data, sizeof(halfword));
+        return fmc_halfword_program(address, halfword) == FMC_READY;
+    }
     memcpy(&word, data, sizeof(word));
     return fmc_word_program(address, word) == FMC_READY;
 }

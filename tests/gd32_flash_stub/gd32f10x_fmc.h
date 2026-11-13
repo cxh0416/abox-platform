@@ -15,5 +15,6 @@ void fmc_flag_clear(uint32_t flag);
 void fmc_unlock(void);
 void fmc_lock(void);
 fmc_state_enum fmc_word_program(uint32_t address, uint32_t word);
+fmc_state_enum fmc_halfword_program(uint32_t address, uint16_t halfword);
 fmc_state_enum fmc_page_erase(uint32_t address);
 #endif

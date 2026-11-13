@@ -40,8 +40,14 @@ static int flash_begin(void *context)
 static int flash_write(void *context, uint32_t address, const uint8_t *data, uint32_t length)
 {
     uint32_t word;
+    uint16_t halfword;
     (void)context;
-    if (!data || length != sizeof(word)) return 0;
+    if (!data) return 0;
+    if (length == sizeof(halfword) && !(address & 1U)) {
+        memcpy(&halfword, data, sizeof(halfword));
+        return HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, address, halfword) == HAL_OK;
+    }
+    if (length != sizeof(word) || (address & 3U)) return 0;
     memcpy(&word, data, sizeof(word));
     return HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, address, word) == HAL_OK;
 }
