@@ -20,7 +20,7 @@ def c_string(raw: bytes) -> str:
     return raw.split(b"\0", 1)[0].decode("ascii")
 
 
-def verify(path: Path) -> dict[str, object]:
+def verify(path: Path, expected_version: str = EXPECTED_VERSION) -> dict[str, object]:
     image = path.read_bytes()
     if len(image) != BOOT_SIZE:
         raise ValueError(f"Boot image must be exactly 0x{BOOT_SIZE:X} bytes, got 0x{len(image):X}")
@@ -44,7 +44,7 @@ def verify(path: Path) -> dict[str, object]:
     actual = (magic, abi, length, features, major, minor, patch)
     if actual != expected:
         raise ValueError(f"descriptor fields mismatch: {actual!r}")
-    if product != EXPECTED_PRODUCT or version != EXPECTED_VERSION:
+    if product != EXPECTED_PRODUCT or version != expected_version:
         raise ValueError(f"descriptor identity mismatch: {product!r}, {version!r}")
     if stored_crc != actual_crc:
         raise ValueError(f"descriptor CRC mismatch: stored=0x{stored_crc:08X} actual=0x{actual_crc:08X}")
@@ -62,8 +62,10 @@ def verify(path: Path) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("image", type=Path)
+    parser.add_argument("--expected-version", choices=(EXPECTED_VERSION, EXPECTED_VERSION + "-st"),
+                        default=EXPECTED_VERSION)
     args = parser.parse_args()
-    result = verify(args.image)
+    result = verify(args.image, args.expected_version)
     print("ABox Boot artifact verified")
     for key, value in result.items():
         print(f"{key}={value}")

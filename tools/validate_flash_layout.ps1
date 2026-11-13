@@ -26,7 +26,15 @@ function Read-GnuRegion([string] $Text, [string] $Name) {
 function Read-GnuFlash([string] $Path) {
     $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     $flash = Read-GnuRegion $text 'FLASH'
-    if ($null -ne $flash) { return $flash }
+    if ($null -ne $flash) {
+        $desc = Read-GnuRegion $text 'DESC'
+        if ($null -eq $desc) { return $flash }
+        if ($flash.Origin -ne $FlashBase -or $flash.Length -ne 0x7F00 -or
+            $desc.Origin -ne ($FlashBase + 0x7F00) -or $desc.Length -ne 0x100) {
+            throw "Boot descriptor regions must be FLASH 0x08000000+0x7F00 and DESC 0x08007F00+0x100"
+        }
+        return [pscustomobject]@{ Origin = $flash.Origin; Length = [uint32]($flash.Length + $desc.Length) }
+    }
     $code = Read-GnuRegion $text 'FLASH_CODE'
     $descriptor = Read-GnuRegion $text 'FLASH_DESC'
     if ($null -eq $code -or $null -eq $descriptor) { return $null }

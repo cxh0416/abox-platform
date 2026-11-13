@@ -5,6 +5,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(ABOX_HARDWARE "" CACHE STRING "Explicit platform hardware target")
 option(ABOX_EXAMPLE_CAN "Compile the public CAN silent-loopback example" ON)
+option(ABOX_EXAMPLE_CAN_EVENTS "Compile the public CAN event service" OFF)
 if(NOT ABOX_HARDWARE OR NOT ABOX_BOARD_VERSION)
     message(FATAL_ERROR "Set ABOX_HARDWARE and ABOX_BOARD_VERSION explicitly")
 endif()
@@ -18,6 +19,9 @@ set_property(TARGET ABoxF105Example APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURREN
 set(example_can)
 if(ABOX_EXAMPLE_CAN)
     set(example_can CAN)
+endif()
+if(ABOX_EXAMPLE_CAN_EVENTS)
+    list(APPEND example_can CAN_EVENTS)
 endif()
 abox_platform_attach_f105_app(ABoxF105Example
     HARDWARE "${ABOX_HARDWARE}"

@@ -11,12 +11,32 @@ add_executable(gd32f105_flash_test gd32f105_flash_test.c
 target_include_directories(gd32f105_flash_test PRIVATE gd32_flash_stub
     ../hardware/mcu/gd32f105/include)
 add_test(NAME gd32f105_flash_test COMMAND gd32f105_flash_test)
+add_executable(gd32f105_watchdog_test gd32f105_watchdog_test.c
+    ../hardware/mcu/gd32f105/watchdog_port_gd32f105.c)
+target_include_directories(gd32f105_watchdog_test PRIVATE gd_watchdog_stub ../hardware/api/include)
+add_test(NAME gd32f105_watchdog_test COMMAND gd32f105_watchdog_test)
 add_executable(gd32f105_can_test gd32f105_can_test.c ../hardware/mcu/gd32f105/can_port_gd32f105.c)
 target_include_directories(gd32f105_can_test PRIVATE gd32_can_stub ../hardware/api/include)
 add_test(NAME gd32f105_can_test COMMAND gd32f105_can_test)
 add_executable(stm32f105_can_test stm32f105_can_test.c ../hardware/mcu/stm32f105/can_port_stm32f105.c)
 target_include_directories(stm32f105_can_test PRIVATE stm32_can_stub ../hardware/api/include)
 add_test(NAME stm32f105_can_test COMMAND stm32f105_can_test)
+add_executable(abox_can_events_test abox_can_events_test.c ../hardware/api/src/abox_can_events.c)
+target_include_directories(abox_can_events_test PRIVATE ../hardware/api/include)
+add_test(NAME abox_can_events_test COMMAND abox_can_events_test)
+add_executable(gd32f105_can_events_test gd32f105_can_events_test.c
+    ../hardware/api/src/abox_can_events.c ../hardware/mcu/gd32f105/can_events_gd32f105.c)
+target_include_directories(gd32f105_can_events_test PRIVATE gd32_can_stub ../hardware/api/include)
+add_test(NAME gd32f105_can_events_test COMMAND gd32f105_can_events_test)
+add_executable(stm32f105_can_events_test stm32f105_can_events_test.c
+    ../hardware/api/src/abox_can_events.c ../hardware/mcu/stm32f105/can_events_stm32f105.c)
+target_include_directories(stm32f105_can_events_test PRIVATE stm32_can_stub ../hardware/api/include)
+add_test(NAME stm32f105_can_events_test COMMAND stm32f105_can_events_test)
+add_executable(gd32f105_can_legacy_test gd32f105_can_legacy_test.c
+    ../hardware/api/src/abox_can_events.c ../hardware/mcu/gd32f105/can_legacy_gd32f105.c)
+target_include_directories(gd32f105_can_legacy_test PRIVATE gd_can_legacy_stub
+    ../hardware/mcu/gd32f105/include ../hardware/api/include)
+add_test(NAME gd32f105_can_legacy_test COMMAND gd32f105_can_legacy_test)
 add_executable(gd32f105_v1_board_test gd32f105_v1_board_test.c
     ../hardware/mcu/gd32f105/board_io_gd32f105_v1.c)
 target_include_directories(gd32f105_v1_board_test PRIVATE gd32_board_stub
@@ -70,6 +90,8 @@ target_include_directories(gd32f105_monotonic_test PRIVATE gd32_timer_stub
 add_test(NAME gd32f105_monotonic_test COMMAND gd32f105_monotonic_test)
 find_program(ABOX_ARM_GCC arm-none-eabi-gcc)
 if(ABOX_ARM_GCC)
+    add_test(NAME gd32f105_freertos_vectors COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/gd32f105_freertos_vectors_test.py ${CMAKE_BINARY_DIR})
     add_test(NAME f105_example_build COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/f105_example_build_test.py ${CMAKE_BINARY_DIR})
     add_test(NAME gd32f105_vendor_compile COMMAND ${Python3_EXECUTABLE}
@@ -77,6 +99,8 @@ if(ABOX_ARM_GCC)
         ${ABOX_ARM_GCC} ${CMAKE_BINARY_DIR})
     add_test(NAME gd32f105_boot_build COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/gd32f105_boot_build_test.py ${CMAKE_BINARY_DIR})
+    add_test(NAME stm32f105_boot_suffix_build COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/stm32f105_boot_suffix_build_test.py ${CMAKE_BINARY_DIR})
     add_test(NAME gd32f105_hardware_bench_build COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/gd32f105_uart_bench_build_test.py ${CMAKE_BINARY_DIR})
     add_test(NAME stm32f105_can_vendor_compile COMMAND ${Python3_EXECUTABLE}

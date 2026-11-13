@@ -14,11 +14,11 @@ for name, hardware, board, vendor_symbol in (
                     "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                     "-DCMAKE_TOOLCHAIN_FILE=" + str(toolchain),
                     "-DABOX_HARDWARE=" + hardware, "-DABOX_BOARD_VERSION=" + board,
-                    "-DABOX_EXAMPLE_CAN=ON"], check=True)
+                    "-DABOX_EXAMPLE_CAN=ON", "-DABOX_EXAMPLE_CAN_EVENTS=ON"], check=True)
     subprocess.run(["cmake", "--build", str(build)], check=True)
     symbols = subprocess.check_output(["arm-none-eabi-nm", str(build / "ABoxF105Example")], text=True)
     names = {line.split()[-1] for line in symbols.splitlines() if line.split()}
-    assert {"ABoxBoard_Init", "ABoxCanPort_Init", vendor_symbol} <= names, name
+    assert {"ABoxBoard_Init", "ABoxCanPort_Init", "ABoxCanPort_DispatchEventIrq", vendor_symbol} <= names, name
     if name == "st":
         assert "MX_CAN1_Init" not in names and "MX_CAN2_Init" not in names
 print("F105 examples linked both board implementations and public CAN ports")

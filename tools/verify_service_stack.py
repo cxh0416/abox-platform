@@ -7,7 +7,23 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--build', type=Path, required=True)
 parser.add_argument('--budget', type=Path, required=True)
 args = parser.parse_args()
-budget = json.loads(args.budget.read_text(encoding='utf-8'))
+def read_budget(path, seen=None):
+    path = path.resolve()
+    seen = set() if seen is None else seen
+    if path in seen:
+        raise ValueError(f'Circular stack budget inheritance: {path}')
+    seen.add(path)
+    selected = json.loads(path.read_text(encoding='utf-8'))
+    parent = selected.pop('extends', None)
+    if not parent:
+        return selected
+    budget = read_budget(path.parent / parent, seen)
+    budget.setdefault('chains', {}).update(selected.pop('chains', {}))
+    budget.update(selected)
+    return budget
+
+
+budget = read_budget(args.budget)
 frames = {}
 for path in args.build.rglob('*.su'):
     for line in path.read_text(errors='replace').splitlines():

@@ -10,7 +10,11 @@ void gpio_bit_reset(uint32_t port, uint32_t pin) { output[port] &= ~pin; }
 void gpio_init(uint32_t port, uint32_t mode, uint32_t speed, uint32_t pin)
 {
     assert(speed == GPIO_OSPEED_2MHZ);
-    if (mode == GPIO_MODE_OUT_PP) { assert(!(output[port] & pin)); output_config[port] |= pin; }
+    if (mode == GPIO_MODE_OUT_PP) {
+        if (port == GPIOB && pin == ((1U << 14U) | (1U << 15U))) assert((output[port] & pin) == pin);
+        else assert(!(output[port] & pin));
+        output_config[port] |= pin;
+    }
     else { assert(mode == GPIO_MODE_IN_FLOATING); input_config[port] |= pin; }
 }
 FlagStatus gpio_input_bit_get(uint32_t port, uint32_t pin) { return (input[port] & pin) ? SET : RESET; }
@@ -29,8 +33,8 @@ int main(void)
     assert(output[0] == 7U && output[1] == 4U && output[2] == 16U);
     assert(clocks[0] == 0U && clocks[1] == 1U && clocks[2] == 0U);
     assert(ABoxBoardIo_Init(&io, port, 15U) == ABOX_BOARD_IO_OK);
-    assert(output[0] == 0U && output[1] == 0U && output[2] == 0U);
-    assert(output_config[0] == 7U && output_config[1] == 7U && output_config[2] == 16U);
+    assert(output[0] == 0U && output[1] == 0xc000U && output[2] == 0U);
+    assert(output_config[0] == 7U && output_config[1] == 0xc007U && output_config[2] == 16U);
     assert(input_config[0] == 0xf0U && input_config[2] == 0U);
     for (unsigned i = 0; i < 4U; ++i) {
         input[0] = 1U << (4U + i);
@@ -49,7 +53,7 @@ int main(void)
     assert(port->read_output_pin(0, ABOX_BOARD_IO_OUT1, &level) && level == 0U);
     assert(!port->read_output_pin(0, (ABoxBoardIoOutput)9, &level));
     assert(ABoxBoardIo_LedSet(&io, ABOX_BOARD_IO_LED3, ABOX_BOARD_IO_LED_ON, 0U, 0U) == ABOX_BOARD_IO_OK);
-    assert(output[1] == 4U);
+    assert(output[1] == 0xc004U);
     primask = 1U;
     assert(ABoxBoardIo_OutputSet(&io, ABOX_BOARD_IO_OUT2, 1U) == ABOX_BOARD_IO_OK && primask == 1U);
     return 0;

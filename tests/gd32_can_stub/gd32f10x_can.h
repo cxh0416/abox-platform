@@ -1,6 +1,31 @@
 #ifndef TEST_GD32F10X_CAN_H
 #define TEST_GD32F10X_CAN_H
 #include <stdint.h>
+extern uint32_t test_can_registers[2][128];
+#define TEST_CAN_INDEX(p) ((p) == CAN0 ? 0U : 1U)
+#define CAN_ERR(p) test_can_registers[TEST_CAN_INDEX(p)][6]
+#define CAN_INTEN(p) test_can_registers[TEST_CAN_INDEX(p)][5]
+#define CAN_STAT(p) test_can_registers[TEST_CAN_INDEX(p)][1]
+#define CAN_RFIFO0(p) test_can_registers[TEST_CAN_INDEX(p)][3]
+#define CAN_ERR_ERRN (7U << 4U)
+#define CAN_STAT_ERRIF (1U << 2U)
+#define CAN_INTEN_TMEIE (1U << 0U)
+#define CAN_INTEN_RFNEIE0 (1U << 1U)
+#define CAN_INTEN_WERRIE (1U << 8U)
+#define CAN_INTEN_PERRIE (1U << 9U)
+#define CAN_INTEN_BOIE (1U << 10U)
+#define CAN_INTEN_ERRNIE (1U << 11U)
+#define CAN_INTEN_ERRIE (1U << 15U)
+#define CAN_TSTAT(p) test_can_registers[TEST_CAN_INDEX(p)][2]
+#define CAN_TMI(p, b) test_can_registers[TEST_CAN_INDEX(p)][96U + 4U * (b)]
+#define CAN_TMP(p, b) test_can_registers[TEST_CAN_INDEX(p)][97U + 4U * (b)]
+#define CAN_TMDATA0(p, b) test_can_registers[TEST_CAN_INDEX(p)][98U + 4U * (b)]
+#define CAN_TMDATA1(p, b) test_can_registers[TEST_CAN_INDEX(p)][99U + 4U * (b)]
+#define CAN_TSTAT_MTF0 1U
+#define CAN_TSTAT_MST0 (1U << 7U)
+#define CAN_TMI_FT 2U
+#define CAN_TMI_FF 4U
+#define CAN_TMI_TEN 1U
 typedef struct {
     uint8_t working_mode, resync_jump_width, time_segment_1, time_segment_2;
     uint8_t time_triggered, auto_bus_off_recovery, auto_wake_up, auto_retrans, rec_fifo_overwrite, trans_fifo_order;

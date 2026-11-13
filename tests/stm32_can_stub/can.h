@@ -8,8 +8,8 @@
 #define HAL_CAN_STATE_RESET 0U
 #define HAL_CAN_STATE_READY 1U
 #define HAL_CAN_STATE_LISTENING 2U
-#define CAN1 ((void *)0x1000U)
-#define CAN2 ((void *)0x2000U)
+#define CAN1 ((CAN_TypeDef *)0x1000U)
+#define CAN2 ((CAN_TypeDef *)0x2000U)
 #define CAN_MODE_NORMAL 0U
 #define CAN_MODE_SILENT_LOOPBACK 3U
 #define CAN_SJW_1TQ 0U
@@ -29,7 +29,9 @@ typedef struct {
     uint32_t Prescaler, Mode, SyncJumpWidth, TimeSeg1, TimeSeg2, TimeTriggeredMode,
         AutoBusOff, AutoWakeUp, AutoRetransmission, ReceiveFifoLocked, TransmitFifoPriority;
 } CAN_InitTypeDef;
-typedef struct { void *Instance; CAN_InitTypeDef Init; uint32_t State; } CAN_HandleTypeDef;
+typedef struct { uint32_t TIR, TDTR, TDLR, TDHR; } CAN_TxMailBox_TypeDef;
+typedef struct { uint32_t ESR, TSR, IER, MSR, RF0R; CAN_TxMailBox_TypeDef sTxMailBox[3]; } CAN_TypeDef;
+typedef struct { CAN_TypeDef *Instance; CAN_InitTypeDef Init; uint32_t State; } CAN_HandleTypeDef;
 typedef struct {
     uint32_t FilterIdHigh, FilterIdLow, FilterMaskIdHigh, FilterMaskIdLow,
         FilterFIFOAssignment, FilterBank, FilterMode, FilterScale, FilterActivation, SlaveStartFilterBank;

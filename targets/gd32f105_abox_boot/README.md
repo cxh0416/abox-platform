@@ -2,7 +2,7 @@
 
 内部资料，不作为正式发布产物。该目标适配 GD32F105RCT6、8 MHz 外部晶振的 ABox V1 和 EC800，使用固定版本的 GD 官方固件库。它复用平台 Boot V2 状态机及公共安装器，App 负责 HTTPS 下载、UFS 分槽和校验元数据；Boot 不负责网络下载。
 
-GD Boot 独立标识为 `abox-gd-boot-1.0.0`，与 STM32 Boot 独立编排版本；二者使用相同的描述符 ABI 和 Boot V2 状态格式。描述符位于 `0x08007F00`，在安装/回滚验证完成前能力位为 0；当前构建不能用于正式 OTA 或替换冻结 STM32 Boot。状态页和配置页地址沿用 Boot V2 布局，安装器只擦写 App 区域。
+GD Boot 标识为 `abox-boot-2.3.0-gd`，与 STM32 Boot 使用相同的版本主体，并通过后缀区分芯片固件库；二者使用相同的描述符 ABI 和 Boot V2 状态格式。描述符位于 `0x08007F00`，按复用的公共 Boot V2 实现声明能力位；状态页和配置页地址沿用 Boot V2 布局，安装器只擦写 App 区域。该版本为本地候选，尚未进行完整实机 OTA 与回滚验证。
 
 ```powershell
 cmake -S . -B build/Release -G Ninja '-DCMAKE_BUILD_TYPE=Release' '-DCMAKE_TOOLCHAIN_FILE=gcc-arm-none-eabi.cmake'

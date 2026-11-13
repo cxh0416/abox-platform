@@ -15,6 +15,7 @@ void rcu_periph_clock_enable(uint32_t p) { (void)p; }
 void gpio_init(uint32_t p, uint32_t m, uint32_t s, uint32_t pins)
 { (void)s; if (m == GPIO_MODE_OUT_PP) assert(p == GPIOB && (standby_low & pins)); ++gpio_calls; }
 void gpio_bit_reset(uint32_t p, uint32_t pins) { assert(p == GPIOB); standby_low |= pins; }
+void gpio_bit_set(uint32_t p, uint32_t pins) { assert(p == GPIOB); standby_low &= ~pins; }
 void gpio_pin_remap_config(uint32_t r, uint32_t enabled) { assert(enabled == DISABLE); remap = r; }
 void can_deinit(uint32_t p) { last_bus = p; }
 void can_struct_para_init(uint32_t type, void *p)
@@ -37,12 +38,17 @@ void can_message_receive(uint32_t p, uint8_t fifo, can_receive_message_struct *m
 int main(void)
 {
     ABoxCanFrame frame = {0}, output = {0};
+    uint8_t selected = 99U;
+    const ABoxCanOptions sweeper = {0U, 1U, 1U}, invalid = {2U, 0U, 0U};
+    assert(!ABoxCanPort_InitWithOptions(0U, 500000U, ABOX_CAN_NORMAL, NULL));
+    assert(!ABoxCanPort_InitWithOptions(0U, 500000U, ABOX_CAN_NORMAL, &invalid));
     assert(!ABoxCanPort_Init(2U, 250000U, ABOX_CAN_NORMAL));
     assert(!ABoxCanPort_Init(0U, 0U, ABOX_CAN_NORMAL));
     assert(!ABoxCanPort_Init(0U, 123456U, ABOX_CAN_NORMAL));
     assert(!init_count && !gpio_calls);
     assert(ABoxCanPort_Init(0U, 250000U, ABOX_CAN_SILENT_LOOPBACK));
     assert(last_bus == CAN0 && last_config.prescaler == 8U && last_config.working_mode == CAN_SILENT_LOOPBACK_MODE);
+    assert(last_config.auto_retrans == ENABLE && last_config.auto_bus_off_recovery == DISABLE && last_config.rec_fifo_overwrite == DISABLE);
     assert(last_filter.filter_number == 0U && last_filter.filter_enable == ENABLE && !gpio_calls);
     assert(!ABoxCanPort_Init(0U, 250000U, ABOX_CAN_NORMAL));
     assert(ABoxCanPort_Init(1U, 500000U, ABOX_CAN_NORMAL));
@@ -53,7 +59,10 @@ int main(void)
     assert(ABoxCanPort_Send(0U, &frame) == -1 && !queued);
     frame.length = 2U; frame.data[0] = 0x34U; frame.data[1] = 0x56U;
     mailbox = CAN_NOMAILBOX; assert(ABoxCanPort_Send(1U, &frame) == 0);
+    assert(ABoxCanPort_SendTracked(1U, &frame, &selected) == 0 && selected == 99U);
     mailbox = 2U; assert(ABoxCanPort_Send(1U, &frame) == 1);
+    assert(ABoxCanPort_SendTracked(1U, &frame, &selected) == 1 && selected == 2U);
+    assert(ABoxCanPort_SendTracked(1U, &frame, NULL) == -1);
     assert(last_bus == CAN1 && sent.tx_ff == CAN_FF_EXTENDED && sent.tx_efid == frame.id &&
            sent.tx_dlen == 2U && sent.tx_data[0] == 0x34U && sent.tx_data[1] == 0x56U);
     assert(ABoxCanPort_Receive(1U, &output) == 0);
@@ -67,6 +76,9 @@ int main(void)
     standby_low = 0U; gpio_calls = 0U;
     assert(ABoxCanPort_Init(0U, 250000U, ABOX_CAN_NORMAL));
     assert(standby_low == (1U << 15) && gpio_calls == 3U);
+    assert(ABoxCanPort_Stop(0U));
+    assert(ABoxCanPort_InitWithOptions(0U, 500000U, ABOX_CAN_SILENT_LOOPBACK, &sweeper));
+    assert(last_config.auto_retrans == DISABLE && last_config.auto_bus_off_recovery == ENABLE && last_config.rec_fifo_overwrite == ENABLE);
     assert(ABoxCanPort_Stop(0U));
     return 0;
 }

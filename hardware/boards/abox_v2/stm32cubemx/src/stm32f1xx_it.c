@@ -23,6 +23,19 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "abox_boot_v2.h"
+#ifdef ABOX_CAN_EVENTS_ENABLED
+#include "abox_can_events.h"
+static void abox_can_irq(unsigned bus)
+{
+  uint32_t saved = __get_PRIMASK();
+  __disable_irq();
+  ABoxCanPort_DispatchEventIrq(bus);
+  __set_PRIMASK(saved);
+}
+#define ABOX_CAN_IRQ(handle, bus) abox_can_irq(bus)
+#else
+#define ABOX_CAN_IRQ(handle, bus) HAL_CAN_IRQHandler(handle)
+#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -243,7 +256,7 @@ void CAN1_TX_IRQHandler(void)
   /* USER CODE BEGIN CAN1_TX_IRQn 0 */
 
   /* USER CODE END CAN1_TX_IRQn 0 */
-  HAL_CAN_IRQHandler(&hcan1);
+  ABOX_CAN_IRQ(&hcan1, 0U);
   /* USER CODE BEGIN CAN1_TX_IRQn 1 */
 
   /* USER CODE END CAN1_TX_IRQn 1 */
@@ -257,7 +270,7 @@ void CAN1_RX0_IRQHandler(void)
   /* USER CODE BEGIN CAN1_RX0_IRQn 0 */
 
   /* USER CODE END CAN1_RX0_IRQn 0 */
-  HAL_CAN_IRQHandler(&hcan1);
+  ABOX_CAN_IRQ(&hcan1, 0U);
   /* USER CODE BEGIN CAN1_RX0_IRQn 1 */
 
   /* USER CODE END CAN1_RX0_IRQn 1 */
@@ -271,7 +284,7 @@ void CAN1_RX1_IRQHandler(void)
   /* USER CODE BEGIN CAN1_RX1_IRQn 0 */
 
   /* USER CODE END CAN1_RX1_IRQn 0 */
-  HAL_CAN_IRQHandler(&hcan1);
+  ABOX_CAN_IRQ(&hcan1, 0U);
   /* USER CODE BEGIN CAN1_RX1_IRQn 1 */
 
   /* USER CODE END CAN1_RX1_IRQn 1 */
@@ -285,7 +298,7 @@ void CAN1_SCE_IRQHandler(void)
   /* USER CODE BEGIN CAN1_SCE_IRQn 0 */
 
   /* USER CODE END CAN1_SCE_IRQn 0 */
-  HAL_CAN_IRQHandler(&hcan1);
+  ABOX_CAN_IRQ(&hcan1, 0U);
   /* USER CODE BEGIN CAN1_SCE_IRQn 1 */
 
   /* USER CODE END CAN1_SCE_IRQn 1 */
@@ -341,7 +354,7 @@ void CAN2_TX_IRQHandler(void)
   /* USER CODE BEGIN CAN2_TX_IRQn 0 */
 
   /* USER CODE END CAN2_TX_IRQn 0 */
-  HAL_CAN_IRQHandler(&hcan2);
+  ABOX_CAN_IRQ(&hcan2, 1U);
   /* USER CODE BEGIN CAN2_TX_IRQn 1 */
 
   /* USER CODE END CAN2_TX_IRQn 1 */
@@ -355,7 +368,7 @@ void CAN2_RX0_IRQHandler(void)
   /* USER CODE BEGIN CAN2_RX0_IRQn 0 */
 
   /* USER CODE END CAN2_RX0_IRQn 0 */
-  HAL_CAN_IRQHandler(&hcan2);
+  ABOX_CAN_IRQ(&hcan2, 1U);
   /* USER CODE BEGIN CAN2_RX0_IRQn 1 */
 
   /* USER CODE END CAN2_RX0_IRQn 1 */
@@ -369,7 +382,7 @@ void CAN2_RX1_IRQHandler(void)
   /* USER CODE BEGIN CAN2_RX1_IRQn 0 */
 
   /* USER CODE END CAN2_RX1_IRQn 0 */
-  HAL_CAN_IRQHandler(&hcan2);
+  ABOX_CAN_IRQ(&hcan2, 1U);
   /* USER CODE BEGIN CAN2_RX1_IRQn 1 */
 
   /* USER CODE END CAN2_RX1_IRQn 1 */
@@ -383,7 +396,7 @@ void CAN2_SCE_IRQHandler(void)
   /* USER CODE BEGIN CAN2_SCE_IRQn 0 */
 
   /* USER CODE END CAN2_SCE_IRQn 0 */
-  HAL_CAN_IRQHandler(&hcan2);
+  ABOX_CAN_IRQ(&hcan2, 1U);
   /* USER CODE BEGIN CAN2_SCE_IRQn 1 */
 
   /* USER CODE END CAN2_SCE_IRQn 1 */

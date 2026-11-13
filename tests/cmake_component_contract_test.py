@@ -116,7 +116,13 @@ endif()''' )
               "unsupported HARDWARE", attach_function="abox_platform_attach_f105_app")
     configure("f105-app-bad-scheduler",
               "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1 SCHEDULER FREERTOS",
-              False, "only BAREMETAL", attach_function="abox_platform_attach_f105_app")
+              False, "unsupported scheduler and hardware", attach_function="abox_platform_attach_f105_app")
+    configure("f105-app-can-events-without-can",
+              "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1 CAN_EVENTS",
+              False, "CAN_EVENTS requires CAN", attach_function="abox_platform_attach_f105_app")
+    configure("f105-app-can-events",
+              "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1 CAN CAN_EVENTS",
+              True, attach_function="abox_platform_attach_f105_app")
     configure("serial-port", "SCHEDULER BAREMETAL COMPONENTS core", True,
               extra="abox_platform_attach_serial_port(consumer HARDWARE stm32f105_ec800_v1)")
     configure("serial-port-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,

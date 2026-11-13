@@ -30,6 +30,11 @@ message("Build type: " ${CMAKE_BUILD_TYPE})
 
 set(ABOX_PLATFORM_SCHEDULER "BAREMETAL")
 set(ABOX_BOOT_FW_VERSION "abox-boot-2.3.0" CACHE STRING "Frozen A-Box Boot V2 version marker")
+if(ABOX_BOOT_FW_VERSION STREQUAL "abox-boot-2.3.0-st")
+    set(ABOX_BOOT_DESCRIPTOR_ST_SUFFIX 1)
+elseif(NOT ABOX_BOOT_FW_VERSION STREQUAL "abox-boot-2.3.0")
+    message(FATAL_ERROR "Unsupported Boot version: descriptor CRC must match the version marker")
+endif()
 add_subdirectory("${CMAKE_SOURCE_DIR}/../.." abox_platform_build)
 
 # Enable CMake support for ASM and C languages
@@ -71,6 +76,9 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ABOX_BOOT_FW_VERSION="${ABOX_BOOT_FW_VERSION}")
+if(ABOX_BOOT_DESCRIPTOR_ST_SUFFIX)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE ABOX_BOOT_DESCRIPTOR_ST_SUFFIX=1)
+endif()
 
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)

@@ -1,16 +1,28 @@
 #include "abox_can_port.h"
 #include "can.h"
 #include <string.h>
+#ifdef ABOX_CAN_EVENTS_ENABLED
+#include "abox_can_events.h"
+#endif
 
 static uint8_t ready[2];
 static CAN_HandleTypeDef *handle(unsigned bus) { return bus ? &hcan2 : &hcan1; }
+int ABoxCanPort_IsReady(unsigned bus) { return bus < 2U && ready[bus]; }
 
 int ABoxCanPort_Init(unsigned bus, uint32_t bitrate, ABoxCanMode mode)
+{
+    static const ABoxCanOptions options = {1U, 0U, 1U};
+    return ABoxCanPort_InitWithOptions(bus, bitrate, mode, &options);
+}
+
+int ABoxCanPort_InitWithOptions(unsigned bus, uint32_t bitrate, ABoxCanMode mode,
+                                const ABoxCanOptions *options)
 {
     CAN_HandleTypeDef *h;
     CAN_FilterTypeDef filter = {0};
     uint32_t clock, divisor, prescaler;
-    if (bus > 1U || !bitrate || bitrate > UINT32_MAX / 18U ||
+    if (!options || options->auto_retransmit > 1U || options->auto_bus_off_recovery > 1U || options->rx_fifo_overwrite > 1U ||
+        bus > 1U || !bitrate || bitrate > UINT32_MAX / 18U ||
         (mode != ABOX_CAN_NORMAL && mode != ABOX_CAN_SILENT_LOOPBACK) || ready[bus] ||
         (!bus && ready[1])) return 0;
     h = handle(bus);
@@ -22,9 +34,11 @@ int ABoxCanPort_Init(unsigned bus, uint32_t bitrate, ABoxCanMode mode)
     h->Init.Mode = mode == ABOX_CAN_NORMAL ? CAN_MODE_NORMAL : CAN_MODE_SILENT_LOOPBACK;
     h->Init.SyncJumpWidth = CAN_SJW_1TQ;
     h->Init.TimeSeg1 = CAN_BS1_15TQ; h->Init.TimeSeg2 = CAN_BS2_2TQ;
-    h->Init.TimeTriggeredMode = DISABLE; h->Init.AutoBusOff = DISABLE;
-    h->Init.AutoWakeUp = ENABLE; h->Init.AutoRetransmission = ENABLE;
-    h->Init.ReceiveFifoLocked = DISABLE; h->Init.TransmitFifoPriority = DISABLE;
+    h->Init.TimeTriggeredMode = DISABLE;
+    h->Init.AutoBusOff = options->auto_bus_off_recovery ? ENABLE : DISABLE;
+    h->Init.AutoWakeUp = ENABLE; h->Init.AutoRetransmission = options->auto_retransmit ? ENABLE : DISABLE;
+    h->Init.ReceiveFifoLocked = options->rx_fifo_overwrite ? DISABLE : ENABLE;
+    h->Init.TransmitFifoPriority = DISABLE;
     if (HAL_CAN_Init(h) != HAL_OK) { (void)HAL_CAN_DeInit(h); return 0; }
     filter.FilterBank = bus ? 14U : 0U; filter.SlaveStartFilterBank = 14U;
     filter.FilterMode = CAN_FILTERMODE_IDMASK; filter.FilterScale = CAN_FILTERSCALE_32BIT;
@@ -40,6 +54,9 @@ int ABoxCanPort_Stop(unsigned bus)
     CAN_HandleTypeDef *h;
     int stopped, deinitialized;
     if (bus > 1U || !ready[bus] || (!bus && ready[1])) return 0;
+#ifdef ABOX_CAN_EVENTS_ENABLED
+    ABoxCanPort_DisableEventIrq(bus);
+#endif
     h = handle(bus);
     stopped = HAL_CAN_Stop(h) == HAL_OK;
     deinitialized = HAL_CAN_DeInit(h) == HAL_OK;
@@ -49,9 +66,15 @@ int ABoxCanPort_Stop(unsigned bus)
 
 int ABoxCanPort_Send(unsigned bus, const ABoxCanFrame *frame)
 {
+    uint8_t mailbox;
+    return ABoxCanPort_SendTracked(bus, frame, &mailbox);
+}
+
+int ABoxCanPort_SendTracked(unsigned bus, const ABoxCanFrame *frame, uint8_t *selected_mailbox)
+{
     CAN_TxHeaderTypeDef header = {0};
     uint32_t mailbox;
-    if (bus > 1U || !ready[bus] || !frame || frame->length > 8U ||
+    if (bus > 1U || !ready[bus] || !frame || !selected_mailbox || frame->length > 8U ||
         frame->extended > 1U || frame->remote > 1U ||
         frame->id > (frame->extended ? 0x1FFFFFFFU : 0x7FFU)) return -1;
     if (!HAL_CAN_GetTxMailboxesFreeLevel(handle(bus))) return 0;
@@ -59,7 +82,12 @@ int ABoxCanPort_Send(unsigned bus, const ABoxCanFrame *frame)
     header.RTR = frame->remote ? CAN_RTR_REMOTE : CAN_RTR_DATA;
     if (frame->extended) header.ExtId = frame->id; else header.StdId = frame->id;
     header.DLC = frame->length; header.TransmitGlobalTime = DISABLE;
-    return HAL_CAN_AddTxMessage(handle(bus), &header, (uint8_t *)frame->data, &mailbox) == HAL_OK ? 1 : -1;
+    if (HAL_CAN_AddTxMessage(handle(bus), &header, (uint8_t *)frame->data, &mailbox) != HAL_OK) return -1;
+    if (mailbox == 1U) *selected_mailbox = 0U;
+    else if (mailbox == 2U) *selected_mailbox = 1U;
+    else if (mailbox == 4U) *selected_mailbox = 2U;
+    else return -1;
+    return 1;
 }
 
 int ABoxCanPort_Receive(unsigned bus, ABoxCanFrame *frame)

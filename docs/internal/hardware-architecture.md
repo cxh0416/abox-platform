@@ -47,7 +47,7 @@ ABox_Platform/
 - `hardware/api` 提供送餐车使用的串口、调制解调器串口和 MCU UID 接口，复用既有 `ABoxPlatformPort` 和 `ABoxBoardIoPort`。STM32 和 GD 均有试点实现；产品的锁电源与 LED 通过板载 IO Port 接入。
 - `hardware/mcu/gd32f105` 提供启动、中断、FMC、UART4、USART0 DMA、TIMER1 和 UID 实现；`hardware/boards/abox_v1` 提供 GD V1 GPIO 和板级初始化。固定 GD32F10x 官方库 2.7.0；来源、授权和摘要见 `vendor/gd32f10x/2.7.0/README.md`。
 - 送餐车 GD V1 App 和默认 STM32 App 均通过交叉构建；接口桩测试覆盖串口接收、DMA 边界、Flash 错误、板级 IO 和时基。V1 已完成下方所列的台架检查，GD 输入映射与外围反馈仍须核对。
-- `targets/gd32f105_ec800_v1` 是 App 的硬件选择合同。`targets/gd32f105_abox_boot` 是独立 GD Boot 目标：已接入公共状态机、GD Flash 和 UFS 安装器，交叉构建及镜像布局检查通过。V1 已实测从 Flash 启动、擦写测试页以及从 UFS 稳定槽重装现有 App；候选镜像安装、试运行确认、回滚及掉电恢复尚未实测，描述符能力位保持 0，尚不可作为正式 OTA Boot。冻结 STM32 Boot 的已发布产物未修改；当前无法将 GD App 与冻结 STM32 Boot 作为正式组合打包。
+- `targets/gd32f105_ec800_v1` 是 App 的硬件选择合同。`targets/gd32f105_abox_boot` 是独立 GD Boot 目标：已接入公共状态机、GD Flash 和 UFS 安装器，交叉构建及镜像布局检查通过。V1 已实测从 Flash 启动、擦写测试页以及从 UFS 稳定槽重装现有 App；候选镜像安装、试运行确认、回滚及掉电恢复尚未实测。新候选 `abox-boot-2.3.0-gd` 按公共实现声明 Boot V2 能力。冻结 STM32 Boot 的已发布产物未修改；当前无法将 GD App 与冻结 STM32 Boot 作为正式组合打包。
 - 板卡 V2 的启动、CubeMX 外设与中断源文件和输入引脚表位于 `hardware/boards/abox_v2`，兼容既有产品的 STM32 板载 IO Port 仍在 `targets/stm32f105_ec800_v1`；CAN Port 已提供 STM32/GD 实现，并有 GD V1 UART 和静默 CAN 回环台架目标；真实 CAN 总线及 STM32 实板尚未验证。其他产品继续通过既有入口接入，不因试点自动获得 GD 支持。
 
 ## 公共 Boot 安装器
@@ -72,7 +72,7 @@ ABox_Platform/
 
 V1 送餐车诊断 App 以禁止 MCU Flash 写入、禁止自动播种和 OTA 请求的构建完成平台联调：设备侧 MQTT Core 约 30 秒达到 Ready，EC800 串口持续双向收发且接收错误计数为 0。该检查不单独证明业务心跳在 Broker 接收或锁控成功。首次诊断曾触发 App 自动播种，候选槽 `fw_slot0.bin` 现为 140040 字节，与诊断镜像大小一致；随后禁止自动播种，再次检查大小未变。稳定槽 1 可恢复原 App；设备状态和原 Boot 已核对恢复。具体记录见送餐车内部试点方案。
 
-GD Boot 与 STM32 Boot 独立版本还需要服务端配合：现有 OTA 服务按产品设置统一的 `min_boot_version`，送餐车内部文档也要求 Boot 至少 2.2.0；GD `1.0.0` 即使后续具备所需功能也会被该比较拒绝。现有注册硬件合同仍沿用 STM32 名称，且产物没有完整的按 MCU 匹配与路由。启用 GD OTA 前需按真实硬件和 Boot 家族定义兼容规则，并避免向错误 MCU 下发镜像；不能简单降低共同最低版本或伪报 STM32 身份。
+GD 和 STM32 新 Boot 候选使用相同版本主体 `2.3.0`，以 `-gd`、`-st` 区分芯片固件库；现有无后缀 STM32 Boot 按历史身份识别。OTA 服务按数值版本比较最低要求，并根据真实硬件和 Boot 后缀匹配镜像。历史 GD `1.0.0` 试验版本没有声明 OTA 能力，不作为新候选版本。
 
 V1 另以公共 GD UART4 驱动和独立 RAM 目标进行 COM4 受控串口测试：主机发送 `A5 3C 96 69`，设备 RX 回调触发一次，异步 TX 完成回调触发一次，主机收到 `5A C3 69 96`，错误计数为 0，CFSR/HFSR 为 0。测试程序不写 Flash，测试结束复位回原 Boot/App。该测试验证 MCU 串口和当前 COM4 路径，不证明锁控板或屏幕动作。
 

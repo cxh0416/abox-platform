@@ -167,6 +167,51 @@ function(abox_platform_attach_can_port target)
     target_compile_definitions(${target} PRIVATE ABOX_CAN_PORT_ENABLED=1)
 endfunction()
 
+# Optional mailbox ownership and completion service. It is independent of the
+# polling port and uses the same controller after ABoxCanPort_Init.
+function(abox_platform_attach_can_events target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_can_events: target does not exist")
+    endif()
+    cmake_parse_arguments(ABOX_EVENTS "" "HARDWARE" "" ${ARGN})
+    if(ABOX_EVENTS_UNPARSED_ARGUMENTS OR ABOX_EVENTS_KEYWORDS_MISSING_VALUES)
+        message(FATAL_ERROR "abox_platform_attach_can_events: invalid arguments")
+    endif()
+    if(ABOX_EVENTS_HARDWARE STREQUAL "stm32f105_ec800_v1")
+        set(mcu stm32f105)
+    elseif(ABOX_EVENTS_HARDWARE STREQUAL "gd32f105_ec800_v1")
+        set(mcu gd32f105)
+    else()
+        message(FATAL_ERROR "abox_platform_attach_can_events: unsupported HARDWARE")
+    endif()
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/src/abox_can_events.c"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/${mcu}/can_events_${mcu}.c")
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+    target_compile_definitions(${target} PRIVATE ABOX_CAN_EVENTS_ENABLED=1)
+endfunction()
+
+# Transitional callback bridge for older STM32 F105 applications. The GD
+# implementation uses the public event service and GD peripheral driver.
+function(abox_platform_attach_gd32_legacy_can target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_gd32_legacy_can: target does not exist")
+    endif()
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/gd32f105/can_legacy_gd32f105.c")
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/gd32f105/include")
+endfunction()
+
+function(abox_platform_attach_gd32_watchdog target)
+    if(NOT TARGET ${target})
+        message(FATAL_ERROR "abox_platform_attach_gd32_watchdog: target does not exist")
+    endif()
+    target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/gd32f105/watchdog_port_gd32f105.c")
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/api/include")
+endfunction()
+
 # Opt-in product serial-bus hardware adapter. Unsupported targets fail at
 # configure time rather than silently compiling the STM32 driver for GD.
 function(abox_platform_attach_serial_port target)
@@ -332,6 +377,31 @@ function(abox_platform_attach_standard_app target)
     endif()
 endfunction()
 
+# Attach the product-selected FreeRTOS source and CMSIS-RTOS v2 wrapper to a
+# GD target. The caller provides FreeRTOSConfig.h and the pinned kernel source;
+# do not mix the GD vendor's older core headers with the CMSIS v5 wrapper.
+function(abox_platform_attach_gd32_freertos target source_dir config_dir)
+    if(NOT EXISTS "${source_dir}/tasks.c" OR NOT EXISTS "${source_dir}/CMSIS_RTOS_V2/cmsis_os2.c" OR
+       NOT EXISTS "${config_dir}/FreeRTOSConfig.h")
+        message(FATAL_ERROR "abox_platform_attach_gd32_freertos: kernel source or FreeRTOSConfig.h missing")
+    endif()
+    set(vendor "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../vendor/gd32f10x/2.7.0")
+    set(cmsis "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../vendor/stm32f1/hal-1.1.10/CMSIS/Include")
+    set(gd "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../hardware/mcu/gd32f105")
+    set(kernel_target "${target}_gd32_freertos")
+    add_library(${kernel_target} OBJECT
+        "${source_dir}/croutine.c" "${source_dir}/event_groups.c" "${source_dir}/list.c"
+        "${source_dir}/queue.c" "${source_dir}/stream_buffer.c" "${source_dir}/tasks.c" "${source_dir}/timers.c"
+        "${source_dir}/CMSIS_RTOS_V2/cmsis_os2.c" "${source_dir}/portable/MemMang/heap_4.c"
+        "${source_dir}/portable/GCC/ARM_CM3/port.c")
+    target_include_directories(${kernel_target} PUBLIC "${config_dir}" "${source_dir}/include"
+        "${source_dir}/CMSIS_RTOS_V2" "${source_dir}/portable/GCC/ARM_CM3" "${cmsis}"
+        "${vendor}/CMSIS/GD/GD32F10x/Include" "${vendor}/CMSIS" "${gd}/include"
+        "${vendor}/GD32F10x_standard_peripheral/Include")
+    target_compile_definitions(${kernel_target} PUBLIC GD32F10X_CL CMSIS_device_header="gd32f10x.h")
+    target_link_libraries(${target} ${kernel_target})
+endfunction()
+
 # Single entry for products using the standard F105/EC800 board contract.
 # The consumer supplies App sources, boot_cfg.h and the linker script. An
 # optional HAL_CONFIG_DIR overrides the standard ST config. CAN is opt-in;
@@ -340,7 +410,7 @@ function(abox_platform_attach_f105_app target)
     if(NOT TARGET ${target})
         message(FATAL_ERROR "abox_platform_attach_f105_app: target does not exist")
     endif()
-    cmake_parse_arguments(ABOX_F105 "CAN" "HARDWARE;PRODUCT_CONFIG_DIR;HAL_CONFIG_DIR;SCHEDULER" "" ${ARGN})
+    cmake_parse_arguments(ABOX_F105 "CAN;CAN_EVENTS" "HARDWARE;PRODUCT_CONFIG_DIR;HAL_CONFIG_DIR;SCHEDULER;FREERTOS_SOURCE_DIR;FREERTOS_CONFIG_DIR" "" ${ARGN})
     if(ABOX_F105_UNPARSED_ARGUMENTS OR ABOX_F105_KEYWORDS_MISSING_VALUES OR
             NOT ABOX_F105_HARDWARE OR NOT ABOX_F105_PRODUCT_CONFIG_DIR)
         message(FATAL_ERROR "abox_platform_attach_f105_app: HARDWARE and PRODUCT_CONFIG_DIR are required")
@@ -348,8 +418,9 @@ function(abox_platform_attach_f105_app target)
     if(NOT ABOX_F105_SCHEDULER)
         set(ABOX_F105_SCHEDULER BAREMETAL)
     endif()
-    if(NOT ABOX_F105_SCHEDULER STREQUAL "BAREMETAL")
-        message(FATAL_ERROR "abox_platform_attach_f105_app: only BAREMETAL is supported")
+    if(NOT ABOX_F105_SCHEDULER STREQUAL "BAREMETAL" AND
+       NOT (ABOX_F105_SCHEDULER STREQUAL "FREERTOS" AND ABOX_F105_HARDWARE STREQUAL "gd32f105_ec800_v1"))
+        message(FATAL_ERROR "abox_platform_attach_f105_app: unsupported scheduler and hardware combination")
     endif()
     get_target_property(already_attached ${target} ABOX_F105_APP_ATTACHED)
     if(already_attached)
@@ -370,6 +441,10 @@ function(abox_platform_attach_f105_app target)
         target_link_libraries(${target} m)
     elseif(ABOX_F105_HARDWARE STREQUAL "gd32f105_ec800_v1")
         abox_platform_attach_gd32f105_runtime(${target})
+        if(ABOX_F105_SCHEDULER STREQUAL "FREERTOS")
+            target_compile_definitions(${target} PRIVATE ABOX_GD_FREERTOS=1)
+            abox_platform_attach_gd32_freertos(${target} "${ABOX_F105_FREERTOS_SOURCE_DIR}" "${ABOX_F105_FREERTOS_CONFIG_DIR}")
+        endif()
     else()
         message(FATAL_ERROR "abox_platform_attach_f105_app: unsupported HARDWARE '${ABOX_F105_HARDWARE}'")
     endif()
@@ -382,6 +457,12 @@ function(abox_platform_attach_f105_app target)
     abox_platform_attach_target_identity(${target} HARDWARE ${ABOX_F105_HARDWARE})
     if(ABOX_F105_CAN)
         abox_platform_attach_can_port(${target} HARDWARE ${ABOX_F105_HARDWARE})
+    endif()
+    if(ABOX_F105_CAN_EVENTS)
+        if(NOT ABOX_F105_CAN)
+            message(FATAL_ERROR "abox_platform_attach_f105_app: CAN_EVENTS requires CAN")
+        endif()
+        abox_platform_attach_can_events(${target} HARDWARE ${ABOX_F105_HARDWARE})
     endif()
     set_property(TARGET ${target} PROPERTY ABOX_F105_APP_ATTACHED TRUE)
 endfunction()

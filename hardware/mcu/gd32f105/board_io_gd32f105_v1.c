@@ -21,9 +21,12 @@ static int prepare(void *context)
     rcu_periph_clock_enable(RCU_GPIOC);
     gpio_bit_reset(GPIOA, PIN(0) | PIN(1) | PIN(2));
     gpio_bit_reset(GPIOB, PIN(0) | PIN(1) | PIN(2));
+    /* Both HVD230 transceivers start in standby before vehicle power is on. */
+    gpio_bit_set(GPIOB, PIN(14) | PIN(15));
     gpio_bit_reset(GPIOC, PIN(4));
     gpio_init(GPIOA, GPIO_MODE_OUT_PP, GPIO_OSPEED_2MHZ, PIN(0) | PIN(1) | PIN(2));
     gpio_init(GPIOB, GPIO_MODE_OUT_PP, GPIO_OSPEED_2MHZ, PIN(0) | PIN(1) | PIN(2));
+    gpio_init(GPIOB, GPIO_MODE_OUT_PP, GPIO_OSPEED_2MHZ, PIN(14) | PIN(15));
     gpio_init(GPIOC, GPIO_MODE_OUT_PP, GPIO_OSPEED_2MHZ, PIN(4));
     gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_2MHZ,
               PIN(4) | PIN(5) | PIN(6) | PIN(7));

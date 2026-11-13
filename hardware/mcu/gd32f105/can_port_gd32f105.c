@@ -2,16 +2,29 @@
 #include "gd32f10x.h"
 #include "gd32f10x_can.h"
 #include <string.h>
+#ifdef ABOX_CAN_EVENTS_ENABLED
+#include "abox_can_events.h"
+#endif
 
 static uint8_t ready[2];
+static uint8_t normal_mode[2];
 static uint32_t instance(unsigned bus) { return bus ? CAN1 : CAN0; }
+int ABoxCanPort_IsReady(unsigned bus) { return bus < 2U && ready[bus]; }
 
 int ABoxCanPort_Init(unsigned bus, uint32_t bitrate, ABoxCanMode mode)
+{
+    static const ABoxCanOptions options = {1U, 0U, 0U};
+    return ABoxCanPort_InitWithOptions(bus, bitrate, mode, &options);
+}
+
+int ABoxCanPort_InitWithOptions(unsigned bus, uint32_t bitrate, ABoxCanMode mode,
+                                const ABoxCanOptions *options)
 {
     can_parameter_struct config;
     can_filter_parameter_struct filter;
     uint32_t clock, divisor, prescaler;
-    if (bus > 1U || !bitrate || bitrate > UINT32_MAX / 18U ||
+    if (!options || options->auto_retransmit > 1U || options->auto_bus_off_recovery > 1U || options->rx_fifo_overwrite > 1U ||
+        bus > 1U || !bitrate || bitrate > UINT32_MAX / 18U ||
         (mode != ABOX_CAN_NORMAL && mode != ABOX_CAN_SILENT_LOOPBACK) || ready[bus] ||
         (!bus && ready[1])) return 0;
     clock = rcu_clock_freq_get(CK_APB1); divisor = bitrate * 18U;
@@ -37,14 +50,22 @@ int ABoxCanPort_Init(unsigned bus, uint32_t bitrate, ABoxCanMode mode)
     config.resync_jump_width = CAN_BT_SJW_1TQ;
     config.time_segment_1 = CAN_BT_BS1_15TQ; config.time_segment_2 = CAN_BT_BS2_2TQ;
     config.prescaler = (uint16_t)prescaler;
-    config.auto_retrans = ENABLE; config.auto_wake_up = ENABLE;
-    if (can_init(instance(bus), &config) != SUCCESS) { can_deinit(instance(bus)); return 0; }
+    config.auto_retrans = options->auto_retransmit ? ENABLE : DISABLE;
+    config.auto_bus_off_recovery = options->auto_bus_off_recovery ? ENABLE : DISABLE;
+    config.rec_fifo_overwrite = options->rx_fifo_overwrite ? ENABLE : DISABLE;
+    config.auto_wake_up = ENABLE;
+    if (can_init(instance(bus), &config) != SUCCESS) {
+        can_deinit(instance(bus));
+        if (mode == ABOX_CAN_NORMAL) gpio_bit_set(GPIOB, 1U << (bus ? 14U : 15U));
+        return 0;
+    }
     can1_filter_start_bank(14U);
     can_struct_para_init(CAN_FILTER_STRUCT, &filter);
     filter.filter_number = (uint16_t)(bus ? 14U : 0U);
     filter.filter_mode = CAN_FILTERMODE_MASK; filter.filter_bits = CAN_FILTERBITS_32BIT;
     filter.filter_fifo_number = CAN_FIFO0; filter.filter_enable = ENABLE;
     can_filter_init(&filter);
+    normal_mode[bus] = mode == ABOX_CAN_NORMAL;
     ready[bus] = 1U;
     return 1;
 }
@@ -52,14 +73,24 @@ int ABoxCanPort_Init(unsigned bus, uint32_t bitrate, ABoxCanMode mode)
 int ABoxCanPort_Stop(unsigned bus)
 {
     if (bus > 1U || !ready[bus] || (!bus && ready[1])) return 0;
-    can_deinit(instance(bus)); ready[bus] = 0U; return 1;
+#ifdef ABOX_CAN_EVENTS_ENABLED
+    ABoxCanPort_DisableEventIrq(bus);
+#endif
+    if (normal_mode[bus]) gpio_bit_set(GPIOB, 1U << (bus ? 14U : 15U));
+    can_deinit(instance(bus)); ready[bus] = normal_mode[bus] = 0U; return 1;
 }
 
 int ABoxCanPort_Send(unsigned bus, const ABoxCanFrame *frame)
 {
+    uint8_t mailbox;
+    return ABoxCanPort_SendTracked(bus, frame, &mailbox);
+}
+
+int ABoxCanPort_SendTracked(unsigned bus, const ABoxCanFrame *frame, uint8_t *selected_mailbox)
+{
     can_trasnmit_message_struct message;
     uint8_t mailbox;
-    if (bus > 1U || !ready[bus] || !frame || frame->length > 8U ||
+    if (bus > 1U || !ready[bus] || !frame || !selected_mailbox || frame->length > 8U ||
         frame->extended > 1U || frame->remote > 1U ||
         frame->id > (frame->extended ? 0x1FFFFFFFU : 0x7FFU)) return -1;
     can_struct_para_init(CAN_TX_MESSAGE_STRUCT, &message);
@@ -69,7 +100,10 @@ int ABoxCanPort_Send(unsigned bus, const ABoxCanFrame *frame)
     message.tx_dlen = frame->length;
     if (!frame->remote) memcpy(message.tx_data, frame->data, frame->length);
     mailbox = can_message_transmit(instance(bus), &message);
-    return mailbox == CAN_NOMAILBOX ? 0 : mailbox < CAN_NOMAILBOX ? 1 : -1;
+    if (mailbox == CAN_NOMAILBOX) return 0;
+    if (mailbox > 2U) return -1;
+    *selected_mailbox = mailbox;
+    return 1;
 }
 
 int ABoxCanPort_Receive(unsigned bus, ABoxCanFrame *frame)

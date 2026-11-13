@@ -25,5 +25,6 @@ uint32_t rcu_clock_freq_get(uint32_t clock);
 void rcu_periph_clock_enable(uint32_t peripheral);
 void gpio_init(uint32_t port, uint32_t mode, uint32_t speed, uint32_t pins);
 void gpio_bit_reset(uint32_t port, uint32_t pins);
+void gpio_bit_set(uint32_t port, uint32_t pins);
 void gpio_pin_remap_config(uint32_t remap, uint32_t enabled);
 #endif
