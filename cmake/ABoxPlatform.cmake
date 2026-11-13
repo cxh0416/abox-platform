@@ -54,7 +54,7 @@ function(abox_platform_attach_components target)
         if(component STREQUAL "boot" OR component STREQUAL "ota")
             message(FATAL_ERROR "abox_platform_attach_components: legacy Boot/OTA must be attached explicitly")
         endif()
-        if(NOT component MATCHES "^(core|board_io|cjson|ec_power|ec800|ec800_ufs|ec800_command_port|ec800_tls|mqtt_tls|mqtt_runtime|mqtt_trial|mqtt_v4|mqtt_ec800_rx|mqtt_ec800|enrollment|enrollment_ec800_http|boot_v2_common|boot_v2_app|https_ufs_downloader|cloud_service|log_ring|rtt|maintenance_service|app_service|mqtt_digest|mqtt_request|mqtt_idempotency|mqtt_backoff|mqtt_registry|ec800_ufs_at|ufs_journal|cloud_v4|mqtt_idem_ufs)$")
+        if(NOT component MATCHES "^(core|board_io|cjson|ec_power|ec800|ec800_ufs|ec800_command_port|ec800_tls|mqtt_tls|mqtt_runtime|mqtt_trial|mqtt_v4|mqtt_ec800_rx|mqtt_ec800|enrollment|enrollment_ec800_http|boot_v2_common|boot_v2_app|https_ufs_downloader|cloud_service|log_ring|rtt|rtt_console|maintenance_service|app_service|mqtt_digest|mqtt_request|mqtt_idempotency|mqtt_backoff|mqtt_registry|ec800_ufs_at|ufs_journal|cloud_v4|mqtt_idem_ufs)$")
             message(FATAL_ERROR "abox_platform_attach_components: unknown component '${component}'")
         endif()
         if(NOT TARGET abox::${component})
@@ -64,6 +64,7 @@ function(abox_platform_attach_components target)
     endforeach()
     foreach(requirement IN ITEMS
             "ec_power:core" "ec800_command_port:ec800" "ec800_tls:ec800_ufs"
+            "rtt_console:rtt" "rtt_console:ec800"
             "mqtt_tls:ec800_tls" "mqtt_runtime:mqtt_tls"
             "mqtt_runtime:ec800_command_port" "mqtt_ec800:ec800"
             "mqtt_ec800:mqtt_ec800_rx" "enrollment:cjson"

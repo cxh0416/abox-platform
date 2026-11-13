@@ -181,5 +181,25 @@ int main(void)
         ABoxEc800At_Feed(&at,(const uint8_t *)"OK\r\nRDY\r\nRDY\r\n",14);
         assert(!ABoxBootV2App_IsBusy() && returns==1 && !ABoxBootV2App_TakeFailure(&error));
     }
+    {
+        ABoxBootV2AppRequest req = {0};
+        strcpy(req.version, "test-next");
+        strcpy(req.url, "https://ota.example/fw-revisions/test/test-next/app.bin");
+        req.size=128U; req.crc32=1U;
+        assert(ABoxBootV2App_Init(&port, &config)); g.provisioned=1U;
+        assert(!ABoxBootV2App_StartWithTransport(&req, "http://bad", "UFS:ca.pem"));
+        assert(!ABoxBootV2App_StartWithTransport(&req, "https://alternate.example/path", "UFS:ca.pem"));
+        assert(!ABoxBootV2App_StartWithTransport(&req, "https://alternate.example", "UFS:ca\".pem"));
+        strcpy(req.url, "https://other.example/fw-revisions/test/test-next/app.bin");
+        assert(!ABoxBootV2App_StartWithTransport(&req, "https://alternate.example", "UFS:ca.pem"));
+        strcpy(req.url, "https://ota.example/fw-revisions/test/test-next/app.bin");
+        assert(ABoxBootV2App_StartWithTransport(&req, "https://alternate.example:20444", "UFS:ca.pem"));
+        assert(!strcmp(g.url, "https://alternate.example:20444/fw-revisions/test/test-next/app.bin"));
+        assert(!strcmp(g.downloader.config.ca_file, "UFS:ca.pem"));
+        assert(ABoxBootV2App_Init(&port, &config)); g.provisioned=1U;
+        assert(ABoxBootV2App_Start(&req));
+        assert(!strcmp(g.url, req.url));
+        assert(!strcmp(g.downloader.config.ca_file, "UFS:ota_ca.pem"));
+    }
     return 0;
 }

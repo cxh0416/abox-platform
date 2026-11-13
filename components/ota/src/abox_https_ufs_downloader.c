@@ -33,6 +33,7 @@ enum {
     ST_VERIFY_READ,
     ST_VERIFY_CLOSE,
     ST_VERIFY,
+    ST_FAILURE_CLOSE,
     ST_FAILURE_DELETE,
     ST_ERROR
 };
@@ -113,17 +114,26 @@ void ABoxHttpsUfs_OnModemReset(ABoxHttpsUfsDownloader *d)
     if (d->busy) finalize_failure(d, ABOX_HTTPS_UFS_ERROR_UFS);
 }
 
-static void finish_failure(ABoxHttpsUfsDownloader *d, uint32_t error)
+static void delete_failed_candidate(ABoxHttpsUfsDownloader *d)
 {
     char command[96];
+    d->state = ST_FAILURE_DELETE;
+    (void)snprintf(command, sizeof(command), "AT+QFDEL=\"%s\"", d->request.file);
+    if (!submit(d, command, 5000U)) finalize_failure(d, d->pending_error);
+}
+
+static void finish_failure(ABoxHttpsUfsDownloader *d, uint32_t error)
+{
+    char command[32];
     (void)snprintf(d->failure_command, sizeof(d->failure_command), "%s", d->last_command);
     (void)snprintf(d->failure_phase, sizeof(d->failure_phase), "%s", ABoxHttpsUfs_Phase(d));
     if (d->port.cancel) d->port.cancel(d->port.context);
     d->pending_error = error;
-    d->state = ST_FAILURE_DELETE;
-    (void)snprintf(command, sizeof(command), "AT+QFDEL=\"%s\"",
-                   d->request.file);
-    if (!submit(d, command, 5000U)) finalize_failure(d, error);
+    if (d->handle_valid) {
+        d->state = ST_FAILURE_CLOSE;
+        (void)snprintf(command, sizeof(command), "AT+QFCLOSE=%lu", (unsigned long)d->handle);
+        if (!submit(d, command, 5000U)) finalize_failure(d, error);
+    } else delete_failed_candidate(d);
 }
 
 static void restart_session(ABoxHttpsUfsDownloader *d)
@@ -411,6 +421,13 @@ static void command_done(ABoxHttpsUfsAtResult result, void *user)
 {
     ABoxHttpsUfsDownloader *d = (ABoxHttpsUfsDownloader *)user;
     if (!d || !d->busy) return;
+    if (d->state == ST_FAILURE_CLOSE) {
+        if (result == ABOX_HTTPS_UFS_AT_OK) {
+            d->handle_valid = 0U;
+            delete_failed_candidate(d);
+        } else finalize_failure(d, d->pending_error);
+        return;
+    }
     if (d->state == ST_FAILURE_DELETE) {
         finalize_failure(d, d->pending_error);
         return;
@@ -431,8 +448,9 @@ static void command_done(ABoxHttpsUfsAtResult result, void *user)
                                                    : ABOX_HTTPS_UFS_ERROR_UFS,
                          ABOX_HTTPS_UFS_FALLBACK_DIRECT_ERROR);
     else
-        finish_failure(d, d->state <= ST_RESPONSE_HEADER ? ABOX_HTTPS_UFS_ERROR_HTTP
-                                                          : ABOX_HTTPS_UFS_ERROR_UFS);
+        finish_failure(d, (d->state <= ST_URL || d->state == ST_RANGE_GET ||
+                           d->state == ST_RANGE_READ) ? ABOX_HTTPS_UFS_ERROR_HTTP
+                                                     : ABOX_HTTPS_UFS_ERROR_UFS);
 }
 
 int ABoxHttpsUfs_Init(ABoxHttpsUfsDownloader *d,

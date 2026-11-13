@@ -26,6 +26,12 @@ typedef struct {
     uint8_t delete_errors;
     uint8_t invalid_vector;
     uint8_t write_failures;
+    uint8_t range_get_failures;
+    uint8_t close_failures;
+    uint8_t file_open;
+    uint8_t delete_while_open;
+    uint8_t close_count;
+    uint8_t delete_count;
     uint8_t image[32];
     uint32_t image_size;
     uint32_t direct_response_size;
@@ -131,6 +137,10 @@ static void service_command(ABoxHttpsUfsDownloader *d, Mock *m)
         /* Enrollment left RSA-only suites and both expiry checks enabled. */
         assert(m->cipher_configured && m->time_configured && m->certificate_time_configured);
     }
+    if (strncmp(current, "AT+QFDEL=", 9U) == 0) {
+        ++m->delete_count;
+        if (m->file_open) m->delete_while_open = 1U;
+    }
     if (strncmp(current, "AT+QHTTPURL=", 12U) == 0 ||
         strncmp(current, "AT+QFWRITE=", 11U) == 0)
         ABoxHttpsUfs_Task(d);
@@ -145,8 +155,10 @@ static void service_command(ABoxHttpsUfsDownloader *d, Mock *m)
         m->range_started = 1U;
         line(d, "+QHTTPGET: 0,206,32");
     }
-    else if (strncmp(current, "AT+QFOPEN=", 10U) == 0)
+    else if (strncmp(current, "AT+QFOPEN=", 10U) == 0) {
+        m->file_open = 1U;
         line(d, "+QFOPEN: 1");
+    }
     else if (strncmp(current, "AT+QFLST=", 9U) == 0) {
         char response[64];
         (void)snprintf(response, sizeof(response),
@@ -171,11 +183,23 @@ static void service_command(ABoxHttpsUfsDownloader *d, Mock *m)
                              (uint16_t)m->image_size);
     }
 
-    if (strcmp(current, "AT+QHTTPGET=80") == 0 &&
+    if (strncmp(current, "AT+QFCLOSE=", 11U) == 0) {
+        ++m->close_count;
+        if (m->close_failures) {
+            --m->close_failures;
+            finish(m, ABOX_HTTPS_UFS_AT_ERROR);
+        } else {
+            m->file_open = 0U;
+            finish(m, ABOX_HTTPS_UFS_AT_OK);
+        }
+    } else if (strncmp(current, "AT+QHTTPGETEX=", 14U) == 0 && m->range_get_failures) {
+        --m->range_get_failures;
+        finish(m, ABOX_HTTPS_UFS_AT_ERROR);
+    } else if (strcmp(current, "AT+QHTTPGET=80") == 0 &&
         m->direct_get_failures) {
         --m->direct_get_failures;
         finish(m, ABOX_HTTPS_UFS_AT_ERROR);
-    } else if (strncmp(current, "AT+QFDEL=", 10U) == 0 && m->delete_errors) {
+    } else if (strncmp(current, "AT+QFDEL=", 9U) == 0 && m->delete_errors) {
         --m->delete_errors;
         finish(m, ABOX_HTTPS_UFS_AT_ERROR);
     } else if (strncmp(current, "AT+QFWRITE=", 11U) == 0 && m->write_failures) {
@@ -372,6 +396,28 @@ static void test_ufs_error_log_identifies_command(void)
     assert(strstr(m.last_log, "command=AT+QFWRITE=") != 0);
 }
 
+static void test_range_get_failure_closes_before_cleanup(void)
+{
+    ABoxHttpsUfsDownloader d; Mock m; uint32_t error = 0U;
+    setup(&d, &m, 0U); m.range_get_failures = 1U;
+    run_until_done(&d, &m);
+    assert(ABoxHttpsUfs_TakeFailure(&d, &error) && error == ABOX_HTTPS_UFS_ERROR_HTTP);
+    assert(m.close_count == 1U && m.delete_count == 2U);
+    assert(!m.file_open && !m.delete_while_open);
+    assert(strstr(m.last_log, "command=AT+QHTTPGETEX=") != 0);
+}
+
+static void test_failed_cleanup_close_preserves_original_error(void)
+{
+    ABoxHttpsUfsDownloader d; Mock m; uint32_t error = 0U;
+    setup(&d, &m, 0U); m.range_get_failures = 1U; m.close_failures = 1U;
+    run_until_done(&d, &m);
+    assert(ABoxHttpsUfs_TakeFailure(&d, &error) && error == ABOX_HTTPS_UFS_ERROR_HTTP);
+    assert(m.close_count == 1U && m.delete_count == 1U);
+    assert(m.file_open && !m.delete_while_open);
+    assert(strstr(m.last_log, "command=AT+QHTTPGETEX=") != 0);
+}
+
 int main(void)
 {
     for (unsigned backend=0; backend<2; ++backend) {
@@ -397,5 +443,7 @@ int main(void)
     test_vector_failure_never_succeeds();
     test_file_size_failure_never_succeeds();
     test_ufs_error_log_identifies_command();
+    test_range_get_failure_closes_before_cleanup();
+    test_failed_cleanup_close_preserves_original_error();
     return 0;
 }

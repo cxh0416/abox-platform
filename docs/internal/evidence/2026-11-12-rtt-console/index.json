@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-12",
+  "target": "STM32F105RC test board [DEVICE_UID]; EC800ECNLCR01A10M04",
+  "diagnostic_app_sha256": "8df90f7b022f5e643b93b5b908bd93a3f7d30396702e77648be8e540c37881b9",
+  "capture": {
+    "file": "rtt-output.txt",
+    "sha256": "5c4039e16e0bc55675682f768228e5c094f675fbbfdb102d5e61ad2a0d7288b3",
+    "qflst_count": 31,
+    "raw_sha256": "1f914306f27eb71701c89b9897e6d8b550356c3d745d134a2caf4c4eea906674",
+    "redaction": "Device UID and probe identifier in filenames replaced in public copy."
+  },
+  "observations": [
+    "help, build information, runtime log, QGMR, UFS space/list and CSQ returned through RTT",
+    "modem busy was observed and query retried",
+    "unsupported QFDEL rejected without sending to modem",
+    "test did not request OTA or delete files"
+  ],
+  "memory": [
+    "64 KiB RAM; minimum heap end 0x2000BBA8; mailbox 0x2000BC40",
+    "TLS workspace ended 0x2000E580; reserved 6 KiB stack starts 0x2000E800; static bounds, not runtime high-water"
+  ],
+  "after_test": "Previous confirmed diagnostic App 1df7d23c2827239b37075f0ce064d3e0006db8bb5770a7e4f139c91bc0205956 restored; Boot entered App; Boot and state/config readback hashes unchanged",
+  "limits": [
+    "Temporary debugger-launched App, not a release or physical device acceptance",
+    "No long-running runtime heap/stack or motion testing"
+  ]
+}

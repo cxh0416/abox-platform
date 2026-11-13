@@ -1,0 +1,73 @@
+ABox RTT console ready; type help
+help | info | log on/off | modem info | ufs space/list | at <supported query>
+meal-delivery bench RTT console; diagnostic
+log on
+[BOOT+0.004s] I APP boot
+[BOOT+0.004s] I APP fw=meal-delivery-vehicle-1.1.57
+[BOOT+0.004s] I APP LOCKCTRL_FW_VERSION=meal-delivery-vehicle-1.1.57
+[BOOT+0.004s] I PWR lock on, video on, out3 on
+[BOOT+0.004s] I LED status indicators enabled
+[BOOT+0.004s] I EC restart sequence
+[BOOT+0.005s] I CFG loaded vid=TFW-[DEVICE_UID] lock_baud=115200 mode=a
+[BOOT+0.006s] I 485 fixed baud=115200
+[BOOT+0.008s] I MQTT runtime state=3 stage=wait-ca
+[BOOT+8.004s] I MQTT runtime state=18 stage=tls-capability
+[BOOT+10.819s] I MQTT runtime state=3 stage=wait-ca
+[BOOT+10.819s] I MQTT runtime state=18 stage=tls-capability
+[BOOT+10.925s] I MQTT runtime state=3 stage=wait-ca
+[BOOT+10.934s] I MQTT runtime state=5 stage=prepare
+[BOOT+11.016s] I MQTT runtime state=6 stage=bind
+[BOOT+11.151s] I MQTT runtime state=7 stage=tls-prepared
+[BOOT+11.151s] I MQTT runtime state=8 stage=connect
+[BOOT+11.438s] W 485 auto no device retry
+[BOOT+11.723s] I OTA Boot V2 App UFS/HTTP/TLS/CA ready
+[BOOT+11.989s] I IDEM UFS ready seq=1
+log off
+query accepted
+EC800ECNLCR01A10M04
+OK
+query result: OK
+query accepted
++QFLDS: 352257,737280
+OK
+query result: OK
+query accepted
++QFLST: "UFS:abox_cp_[PROBE_ID]_a.bin",393
++QFLST: "UFS:abox_cp_[PROBE_ID]_b.bin",393
++QFLST: "UFS:abox_fsm_[PROBE_ID]_a.bin",393
++QFLST: "UFS:abox_fsm_[PROBE_ID]_b.bin",393
++QFLST: "UFS:abox_rtt_[PROBE_ID]_a.bin",1259
++QFLST: "UFS:abox_rtt_[PROBE_ID]_b.bin",1259
++QFLST: "UFS:abox_rtt_[PROBE_ID]_c.bin",1259
++QFLST: "UFS:abox_rtt_[PROBE_ID]_d.bin",1259
++QFLST: "UFS:abox_rtt_[PROBE_ID]_e.bin",1259
++QFLST: "UFS:abox_rtt_[PROBE_ID]_f.bin",1259
++QFLST: "UFS:abox_rtt_[PROBE_ID]_g.bin",1259
++QFLST: "UFS:abox_rtt_[PROBE_ID]_h.bin",1259
++QFLST: "UFS:abox_rtt_[PROBE_ID]_i.bin",2459
++QFLST: "UFS:abox_rtt_[PROBE_ID]_j.bin",2459
++QFLST: "UFS:abox_rtt_[PROBE_ID]_k.bin",2459
++QFLST: "UFS:abox_rtt_[PROBE_ID]_l.bin",2459
++QFLST: "UFS:abox_rtt_[PROBE_ID]_m.bin",2459
++QFLST: "UFS:abox_rtt_[PROBE_ID]_n.bin",2459
++QFLST: "UFS:enrollment_ca_v1.pem",1155
++QFLST: "UFS:fw_slot0.bin",150228
++QFLST: "UFS:fw_slot1.bin",0
++QFLST: "UFS:open_idem_b.dat",760
++QFLST: "UFS:ota_ca.pem",2222
++QFLST: "UFS:patrol_adapter_lab_a.bin",521
++QFLST: "UFS:patrol_adapter_lab_b.bin",521
++QFLST: "UFS:patrol_pf03_v1_a.bin",521
++QFLST: "UFS:patrol_pf03_v1_b.bin",521
++QFLST: "UFS:swp-pwr-0.bin",368
++QFLST: "UFS:swp-pwr-1.bin",368
++QFLST: "UFS:wing-v4-idem-a.bin",3335
++QFLST: "UFS:wing-v4-idem-b.bin",3335
+OK
+query result: OK
+ERR modem busy; retry
+query accepted
++CSQ: 18,0
+OK
+query result: OK
+ERR unsupported command

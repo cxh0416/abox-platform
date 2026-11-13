@@ -52,7 +52,7 @@ Boot V2 App 端口负责 AT 命令提交、原始数据接收、MQTT 暂停/恢�
 
 - App 默认以普通 `QHTTPGET` 获取不可变 HTTPS revision，并通过 `QHTTPREADFILE` 直写 UFS；要求 HTTP `200` 且 Content-Length 完全匹配。
 - 直写命令不支持、连续两次失败或直写后的长度/CRC/向量校验失败时，App 清理会话和候选文件并自动切到一次 1024 字节 Range 下载；Range 每片必须返回 HTTP `206` 且长度准确。
-- UFS 候选必须再经 `QFLST` 与 1024 字节 `QFREAD` 流式校验；最终失败必须删除候选，不得提交安装状态。
+- UFS 候选必须再经 `QFLST` 与 1024 字节 `QFREAD` 流式校验；最终失败不得提交安装状态，清理时先关闭已打开的候选文件，再尝试删除。关闭失败时保留原始失败结果，不将候选视为已删除。
 - App 在写入 `INSTALL_PENDING` 前校验 URL、长度、CRC32 和向量表；Boot 不链接网络下载代码。
 - 新烧录 App 必须先把当前不可变 revision 初始化为稳定 UFS 槽，再报告 `otaReady=true`。初始化失败不能阻塞本地业务，但必须阻止平台 OTA。
 - CA/UFS 初始化对瞬时错误按 5、15、60 秒重试，终止错误每五分钟重试；探测错误为 `1001`，CA 文件错误为 `1002`。

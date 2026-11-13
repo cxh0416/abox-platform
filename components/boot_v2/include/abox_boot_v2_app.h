@@ -87,6 +87,11 @@ int ABoxBootV2App_IsInitialized(void);
 void ABoxBootV2App_OnModemReset(void);
 int ABoxBootV2App_BeginProvisioning(void);
 int ABoxBootV2App_Start(const ABoxBootV2AppRequest *request);
+/* Validate the original revision URL against ota_origin, then use the same
+ * path on an explicitly trusted alternate HTTPS origin and UFS CA. Both
+ * strings must remain valid until the operation finishes. */
+int ABoxBootV2App_StartWithTransport(const ABoxBootV2AppRequest *request,
+                                     const char *origin, const char *ca_file);
 void ABoxBootV2App_Task(void);
 int ABoxBootV2App_IsProvisioned(void);
 int ABoxBootV2App_IsReady(void);

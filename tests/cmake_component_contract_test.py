@@ -57,6 +57,8 @@ def main() -> None:
               inspect_build=True)
     configure("optional-rtt", "SCHEDULER BAREMETAL COMPONENTS rtt", True,
               extra="target_link_libraries(consumer abox::rtt)")
+    configure("optional-rtt-console", "SCHEDULER BAREMETAL COMPONENTS ec800 rtt rtt_console", True)
+    configure("rtt-console-missing-dependency", "SCHEDULER BAREMETAL COMPONENTS rtt_console", False, "requires")
     configure("v4-components", "SCHEDULER BAREMETAL COMPONENTS core cjson mqtt_v4 mqtt_digest "
               "mqtt_request mqtt_idempotency mqtt_registry ec800 ec800_ufs ec800_ufs_at boot_v2_common "
               "ufs_journal mqtt_idem_ufs cloud_service cloud_v4", True,

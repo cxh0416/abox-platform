@@ -467,7 +467,23 @@ static int begin_local_seed(void)
     return 1;
 }
 
-static int begin_request(const ABoxBootV2AppRequest *request, uint8_t seeding)
+static int valid_transport(const char *origin, const char *ca_file)
+{
+    const char *p;
+    if (!origin || strncmp(origin, "https://", 8U) || !origin[8] ||
+        !ca_file || strncmp(ca_file, "UFS:", 4U) || !ca_file[4] ||
+        strlen(ca_file) >= ABOX_HTTPS_UFS_FILE_SIZE) return 0;
+    for (p = origin + 8; *p; ++p)
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9') || *p == '.' || *p == '-' || *p == ':')) return 0;
+    for (p = ca_file + 4; *p; ++p)
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9') || *p == '.' || *p == '-' || *p == '_')) return 0;
+    return 1;
+}
+
+static int begin_request(const ABoxBootV2AppRequest *request, uint8_t seeding,
+                         const char *origin, const char *ca_file)
 {
     ABoxBootV2Record state;
     char expected[ABOX_BOOT_V2_APP_URL_SIZE];
@@ -486,6 +502,11 @@ static int begin_request(const ABoxBootV2AppRequest *request, uint8_t seeding)
                       g.cfg.artifact_name);
     if (length <= 0 || (uint32_t)length >= sizeof(expected) ||
         strcmp(expected, request->url) != 0) {
+        g.last_error = ABOX_BOOT_V2_APP_ERROR_URL;
+        return 0;
+    }
+    if ((origin || ca_file) && (!valid_transport(origin, ca_file) ||
+        strlen(origin) + strlen(expected) - strlen(g.cfg.ota_origin) >= sizeof(g.url))) {
         g.last_error = ABOX_BOOT_V2_APP_ERROR_URL;
         return 0;
     }
@@ -511,7 +532,14 @@ static int begin_request(const ABoxBootV2AppRequest *request, uint8_t seeding)
     g.failure_pending = 0U;
     g.busy = 1U;
     g.last_error = 0U;
-    (void)snprintf(g.url, sizeof(g.url), "%s", request->url);
+    if (origin) {
+        (void)snprintf(g.url, sizeof(g.url), "%s%s", origin,
+                       expected + strlen(g.cfg.ota_origin));
+        g.downloader.config.ca_file = ca_file;
+    } else {
+        (void)snprintf(g.url, sizeof(g.url), "%s", request->url);
+        g.downloader.config.ca_file = "UFS:" ABOX_BOOT_V2_CA_FILE;
+    }
     (void)snprintf(g.version, sizeof(g.version), "%s", request->version);
     begin_download();
     return 1;
@@ -969,7 +997,14 @@ int ABoxBootV2App_BeginProvisioning(void)
 int ABoxBootV2App_Start(const ABoxBootV2AppRequest *request)
 {
     if (!g_initialized) return 0;
-    return begin_request(request, 0U);
+    return begin_request(request, 0U, NULL, NULL);
+}
+
+int ABoxBootV2App_StartWithTransport(const ABoxBootV2AppRequest *request,
+                                     const char *origin, const char *ca_file)
+{
+    if (!g_initialized || !origin || !ca_file) return 0;
+    return begin_request(request, 0U, origin, ca_file);
 }
 
 static int stable_slot_needs_seed(void)

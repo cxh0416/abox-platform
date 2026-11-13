@@ -158,6 +158,9 @@ add_test(NAME abox_component_contract_test
 add_executable(abox_rtt_test abox_rtt_test.c)
 target_link_libraries(abox_rtt_test PRIVATE abox::rtt)
 add_test(NAME abox_rtt_test COMMAND abox_rtt_test)
+add_executable(abox_rtt_console_test abox_rtt_console_test.c)
+target_link_libraries(abox_rtt_console_test PRIVATE abox::rtt_console)
+add_test(NAME abox_rtt_console_test COMMAND abox_rtt_console_test)
 add_test(NAME abox_release_publish_test
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_publish_release.py)
 add_executable(abox_config_store_test abox_config_store_test.c)
