@@ -21,9 +21,6 @@ typedef struct {
     uint32_t app_start;
     uint32_t ota_info_start;
     uint32_t ota_info_size;
-    uint32_t can1_bitrate;
-    uint32_t can2_bitrate;
-    uint32_t uart5_baudrate;
     ABoxSchedulerKind scheduler;
 } ABoxProductConfig;
 

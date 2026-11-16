@@ -1,11 +1,10 @@
 #include "abox_serial_transaction.h"
-#include "abox_serial_port.h"
+#include "abox_uart.h"
 #include <string.h>
 
-static ABoxSerialTransaction *owner;
-static void on_rx(const uint8_t *data, uint16_t length)
+static void on_rx(void *context, const uint8_t *data, uint16_t length)
 {
-    ABoxSerialTransaction *t = owner;
+    ABoxSerialTransaction *t = context;
     uint8_t head, next;
     if (!t) return;
     head = __atomic_load_n(&t->head, __ATOMIC_RELAXED);
@@ -18,30 +17,31 @@ static void on_rx(const uint8_t *data, uint16_t length)
         t->sizes[head] = length;
         __atomic_store_n(&t->head, next, __ATOMIC_RELEASE);
     }
-    if (!ABoxSerialPort_StartRx(t->rx, sizeof(t->rx)))
+    if (!ABoxUart_StartRx(t->uart, ABOX_UART_RX_IDLE, t->rx, sizeof(t->rx)))
         __atomic_store_n(&t->error, 1U, __ATOMIC_RELEASE);
 }
-static void on_error(void)
-{ if (owner) __atomic_store_n(&owner->error, 1U, __ATOMIC_RELEASE); }
+static void on_error(void *context)
+{ ABoxSerialTransaction *t = context; if (t) __atomic_store_n(&t->error, 1U, __ATOMIC_RELEASE); }
 
-void ABoxSerialTransaction_Init(ABoxSerialTransaction *transaction)
+int ABoxSerialTransaction_Init(ABoxSerialTransaction *transaction, ABoxUartId uart)
 {
-    static const ABoxSerialPortEvents events = {on_rx, 0, on_error};
-    owner = transaction;
-    if (transaction) memset(transaction, 0, sizeof(*transaction));
-    ABoxSerialPort_SetEvents(&events);
+    const uint32_t required = ABOX_UART_CAP_RX_IDLE | ABOX_UART_CAP_FLUSH_RX | ABOX_UART_CAP_BLOCKING_TX;
+    if (!transaction || (ABoxUart_Capabilities(uart) & required) != required) return 0;
+    memset(transaction, 0, sizeof(*transaction));
+    transaction->uart = uart;
+    transaction->events = (ABoxUartEvents){transaction, on_rx, 0, on_error, 0};
+    return ABoxUart_SetEvents(uart, &transaction->events);
 }
 int ABoxSerialTransaction_Begin(ABoxSerialTransaction *t, const uint8_t *request,
                                 uint16_t size, uint32_t timeout_ms)
 {
-    if (!t || owner != t || !request || !size || !ABoxSerialPort_AbortRx()) return 0;
-    ABoxSerialPort_FlushRx();
+    if (!t || !request || !size || !ABoxUart_AbortRx(t->uart) || !ABoxUart_FlushRx(t->uart)) return 0;
     __atomic_store_n(&t->head, 0U, __ATOMIC_RELAXED);
     __atomic_store_n(&t->tail, 0U, __ATOMIC_RELAXED);
     __atomic_store_n(&t->error, 0U, __ATOMIC_RELEASE);
-    if (!ABoxSerialPort_StartRx(t->rx, sizeof(t->rx))) return 0;
-    if (ABoxSerialPort_SendBlocking(request, size, timeout_ms)) return 1;
-    (void)ABoxSerialPort_AbortRx();
+    if (!ABoxUart_StartRx(t->uart, ABOX_UART_RX_IDLE, t->rx, sizeof(t->rx))) return 0;
+    if (ABoxUart_SendBlocking(t->uart, request, size, timeout_ms)) return 1;
+    (void)ABoxUart_AbortRx(t->uart);
     return 0;
 }
 int ABoxSerialTransaction_Take(ABoxSerialTransaction *t, uint8_t *destination,
@@ -49,7 +49,7 @@ int ABoxSerialTransaction_Take(ABoxSerialTransaction *t, uint8_t *destination,
 {
     uint8_t tail;
     uint16_t size;
-    if (!t || owner != t || !destination || !length) return -1;
+    if (!t || !destination || !length) return -1;
     *length = 0U;
     if (__atomic_load_n(&t->error, __ATOMIC_ACQUIRE)) return -1;
     tail = __atomic_load_n(&t->tail, __ATOMIC_RELAXED);
@@ -62,4 +62,4 @@ int ABoxSerialTransaction_Take(ABoxSerialTransaction *t, uint8_t *destination,
     return 1;
 }
 int ABoxSerialTransaction_End(ABoxSerialTransaction *t)
-{ return t && owner == t && ABoxSerialPort_AbortRx(); }
+{ return t && ABoxUart_AbortRx(t->uart); }

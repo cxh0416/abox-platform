@@ -433,12 +433,13 @@ uint32_t HAL_RCCEx_GetPeriphCLKFreq(uint32_t PeriphClk)
             /* PLLCLK = PLL2CLK / PREDIV1 * PLLMUL with PLL2CLK = HSE/PREDIV2 * PLL2MUL */
             prediv2 = ((RCC->CFGR2 & RCC_CFGR2_PREDIV2) >> RCC_CFGR2_PREDIV2_Pos) + 1;
             pll2mul = ((RCC->CFGR2 & RCC_CFGR2_PLL2MUL) >> RCC_CFGR2_PLL2MUL_Pos) + 2;
-            pllclk = (uint32_t)((((HSE_VALUE / prediv2) * pll2mul) / prediv1) * pllmul);
+            if (pll2mul == 17U) pll2mul = 20U;
+            pllclk = (uint32_t)(((uint64_t)HSE_VALUE * pll2mul * pllmul) / ((uint64_t)prediv2 * prediv1));
           }
           else
           {
             /* HSE used as PLL clock source : PLLCLK = HSE/PREDIV1 * PLLMUL */
-            pllclk = (uint32_t)((HSE_VALUE / prediv1) * pllmul);
+            pllclk = (uint32_t)(((uint64_t)HSE_VALUE * pllmul) / prediv1);
           }
 
           /* If PLLMUL was set to 13 means that it was to cover the case PLLMUL 6.5 (avoid using float) */
@@ -459,6 +460,9 @@ uint32_t HAL_RCCEx_GetPeriphCLKFreq(uint32_t PeriphClk)
         {
           /* HSI used as PLL clock source : PLLCLK = HSI/2 * PLLMUL */
           pllclk = (uint32_t)((HSI_VALUE >> 1) * pllmul);
+#if defined(STM32F105xC) || defined(STM32F107xC)
+          if (pllmul == 13U) pllclk /= 2U;
+#endif
         }
 
         /* Calcul of the USB frequency*/
@@ -511,7 +515,8 @@ uint32_t HAL_RCCEx_GetPeriphCLKFreq(uint32_t PeriphClk)
           /* PLLI2SVCO = 2 * PLLI2SCLK = 2 * (HSE/PREDIV2 * PLL3MUL) */
           prediv2 = ((RCC->CFGR2 & RCC_CFGR2_PREDIV2) >> RCC_CFGR2_PREDIV2_Pos) + 1;
           pll3mul = ((RCC->CFGR2 & RCC_CFGR2_PLL3MUL) >> RCC_CFGR2_PLL3MUL_Pos) + 2;
-          frequency = (uint32_t)(2 * ((HSE_VALUE / prediv2) * pll3mul));
+          if (pll3mul == 17U) pll3mul = 20U;
+          frequency = (uint32_t)(((uint64_t)2U * HSE_VALUE * pll3mul) / prediv2);
         }
       }
 #endif /* STM32F103xE || STM32F103xG */
@@ -536,7 +541,8 @@ uint32_t HAL_RCCEx_GetPeriphCLKFreq(uint32_t PeriphClk)
           /* PLLI2SVCO = 2 * PLLI2SCLK = 2 * (HSE/PREDIV2 * PLL3MUL) */
           prediv2 = ((RCC->CFGR2 & RCC_CFGR2_PREDIV2) >> RCC_CFGR2_PREDIV2_Pos) + 1;
           pll3mul = ((RCC->CFGR2 & RCC_CFGR2_PLL3MUL) >> RCC_CFGR2_PLL3MUL_Pos) + 2;
-          frequency = (uint32_t)(2 * ((HSE_VALUE / prediv2) * pll3mul));
+          if (pll3mul == 17U) pll3mul = 20U;
+          frequency = (uint32_t)(((uint64_t)2U * HSE_VALUE * pll3mul) / prediv2);
         }
       }
 #endif /* STM32F103xE || STM32F103xG */

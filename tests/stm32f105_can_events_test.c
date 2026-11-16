@@ -7,8 +7,11 @@ static CAN_TypeDef registers;
 static uint8_t completed;
 int ABoxCanPort_IsReady(unsigned bus) { return bus == 1U; }
 int ABoxCanPort_Receive(unsigned bus, ABoxCanFrame *frame) { (void)bus; (void)frame; return 0; }
+int ABoxCanPort_ReceiveFifo(unsigned bus,unsigned fifo,ABoxCanFrame *frame) { (void)bus;(void)fifo;(void)frame;return 0; }
 static void complete(void *ctx, uint8_t mailbox, ABoxCanTxResult result)
 { (void)ctx; assert(result == ABOX_CAN_TX_ABORTED); completed = (uint8_t)(1U << mailbox); }
+static void on_receive1(void *ctx,const ABoxCanFrame *frame) { (void)ctx;(void)frame; }
+static void on_overflow(void *ctx,unsigned fifo) { (void)ctx;(void)fifo; }
 
 int main(void)
 {
@@ -19,6 +22,12 @@ int main(void)
     hcan2.Instance = &registers;
     assert(!ABoxCanPort_BindEvents(0U, &events, &callbacks));
     assert(ABoxCanPort_BindEvents(1U, &events, &callbacks));
+    callbacks.receive_fifo1=on_receive1;callbacks.fifo_overflow=on_overflow;
+    assert(ABoxCanPort_EnableEventIrq(1U,&events));
+    assert((registers.IER & ((1U<<4U)|(1U<<3U)|(1U<<6U)))==((1U<<4U)|(1U<<3U)|(1U<<6U)));
+    registers.RF1R=0x11U;assert(events.hardware->snapshot(events.hardware->context,&(ABoxCanSnapshot){0}));
+    events.hardware->clear_fifo_overflow(events.hardware->context,1U);assert(registers.RF1R==(1U<<4U));
+    ABoxCanPort_DisableEventIrq(1U);
     registers.TSR = 1UL << 26U;
     assert(ABoxCanEvents_Send(&events, &frame, &mailbox) == 1 && mailbox == 0U);
     assert(registers.sTxMailBox[0].TIR == ((0x321U << 21U) | 1U));

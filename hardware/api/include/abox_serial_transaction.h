@@ -1,6 +1,7 @@
 #ifndef ABOX_SERIAL_TRANSACTION_H
 #define ABOX_SERIAL_TRANSACTION_H
 #include <stdint.h>
+#include "abox_uart.h"
 
 /* One product serial port, one transaction owner. Receive is armed before
  * transmit so a fast response or local echo is retained. A bounded queue
@@ -20,10 +21,12 @@ typedef struct {
     uint8_t chunks[ABOX_SERIAL_TRANSACTION_SLOTS][ABOX_SERIAL_TRANSACTION_CHUNK_SIZE];
     uint16_t sizes[ABOX_SERIAL_TRANSACTION_SLOTS];
     uint8_t head, tail, error;
+    ABoxUartId uart;
+    ABoxUartEvents events;
 } ABoxSerialTransaction;
 
 /* Bind this instance before use; replaces the serial port event callbacks. */
-void ABoxSerialTransaction_Init(ABoxSerialTransaction *transaction);
+int ABoxSerialTransaction_Init(ABoxSerialTransaction *transaction, ABoxUartId uart);
 int ABoxSerialTransaction_Begin(ABoxSerialTransaction *transaction,
                                 const uint8_t *request, uint16_t size, uint32_t timeout_ms);
 /* 1 = chunk copied, 0 = no chunk yet, -1 = transport error/overflow or too

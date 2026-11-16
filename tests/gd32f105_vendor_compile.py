@@ -9,7 +9,7 @@ out = pathlib.Path(sys.argv[2]) / "gd32f105-vendor-compile"
 out.mkdir(parents=True, exist_ok=True)
 vendor = root / "vendor/gd32f10x/2.7.0"
 adapter = root / "hardware/mcu/gd32f105"
-includes = [adapter / "include", vendor / "CMSIS", root / "hardware/api/include",
+includes = [adapter / "include", vendor / "CMSIS", root / "hardware/api/include", root / "hardware/internal/include",
             root / "components/core/include",
             root / "hardware/boards/abox_v1/include", root / "components/board_io/include",
             vendor / "CMSIS/GD/GD32F10x/Include",
@@ -18,11 +18,17 @@ common = [sys.argv[1], "-std=c11", "-mcpu=cortex-m3", "-mthumb", "-DGD32F10X_CL"
 common += ["-I" + str(path) for path in includes]
 sources = [(adapter / "flash_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
            (adapter / "board_io_gd32f105_v1.c", ["-Wall", "-Wextra", "-Werror"]),
-           (adapter / "serial_port_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
-           (adapter / "modem_port_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
+           (adapter.parent / "uart_f105.c", ["-Wall", "-Wextra", "-Werror"]),
+           (adapter / "uart_hw_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
            (adapter / "monotonic_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
            (adapter / "mcu_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
+           (adapter / "gpio_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
            (adapter / "can_port_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
+           (root / "hardware/boards/abox_v1/board_can_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
+           (adapter / "pinmux_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
+           (adapter / "crc_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
+           (adapter / "backup_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
+           (adapter / "pvd_gd32f105.c", ["-Wall", "-Wextra", "-Werror"]),
            (vendor / "GD32F10x_standard_peripheral/Source/gd32f10x_fmc.c", []),
            (vendor / "GD32F10x_standard_peripheral/Source/gd32f10x_gpio.c", []),
            (vendor / "GD32F10x_standard_peripheral/Source/gd32f10x_rcu.c", []),

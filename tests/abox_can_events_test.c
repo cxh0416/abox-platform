@@ -6,6 +6,7 @@ typedef struct {
     ABoxCanSnapshot snapshot;
     uint8_t cleared, aborted, sent, observed, completions;
     uint8_t inject_completion, received, error_cleared;
+    uint8_t received1,overflow_mask,overflow_cleared;
     uint32_t errors;
     ABoxCanTxResult result[3];
 } Fake;
@@ -36,6 +37,13 @@ static int receive(void *context, ABoxCanFrame *frame)
 static void clear_error(void *context) { ((Fake *)context)->error_cleared = 1U; }
 static void on_receive(void *context, const ABoxCanFrame *frame)
 { assert(frame->id == 0x456U); ((Fake *)context)->received++; }
+static int receive1(void *context,ABoxCanFrame *frame) { (void)context;frame->id=0x789U;return 1; }
+static void on_receive1(void *context,const ABoxCanFrame *frame)
+{ assert(frame->id==0x789U);((Fake *)context)->received1++; }
+static void clear_overflow(void *context,unsigned fifo)
+{ ((Fake *)context)->overflow_cleared|=(uint8_t)(1U<<fifo); }
+static void on_overflow(void *context,unsigned fifo)
+{ Fake *f=context;assert(f->overflow_cleared & (1U<<fifo));f->overflow_mask|=(uint8_t)(1U<<fifo); }
 static void on_error(void *context, const ABoxCanSnapshot *snapshot, uint32_t error_bits)
 { assert(snapshot->error_status == 0x34U); ((Fake *)context)->errors = error_bits; }
 static void observe(void *context, const ABoxCanSnapshot *snapshot, uint8_t mask)
@@ -79,6 +87,12 @@ int main(void)
     assert(ABoxCanEvents_Irq(&events));
     assert(fake.received == 1U && fake.error_cleared &&
            fake.errors == (ABOX_CAN_ERROR_BUS_OFF | ABOX_CAN_ERROR_ACK));
+    hardware.receive_fifo1=receive1;hardware.clear_fifo_overflow=clear_overflow;
+    callbacks.receive_fifo1=on_receive1;callbacks.fifo_overflow=on_overflow;
+    fake.snapshot.interrupt_enable=(1U<<4U)|(1U<<3U)|(1U<<6U);
+    fake.snapshot.fifo0_status=1U<<4U;fake.snapshot.fifo1_status=(1U<<4U)|1U;
+    assert(ABoxCanEvents_Irq(&events));
+    assert(fake.received1==1U && fake.overflow_mask==3U && fake.overflow_cleared==3U);
     frame.length = 9U;
     assert(ABoxCanEvents_Send(&events, &frame, &mailbox) == -1);
     return 0;

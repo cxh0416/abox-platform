@@ -1,8 +1,10 @@
 # STM32F1 HAL 1.1.10 and CMSIS subset
 
-This is the 70-file STM32F105 driver/CMSIS subset already used by the Meal Delivery Vehicle App. Its CubeMX project identifies STM32Cube FW_F1 V1.8.7; `stm32f1xx_hal.c` identifies HAL version 1.1.10. The files were copied from the existing product checkout, not downloaded anew; line endings were normalized to LF, with no other intentional changes. This is a subset, not the complete STM32Cube package.
+The original 70-file STM32F105 driver/CMSIS subset was already used by the Meal Delivery Vehicle App. Its CubeMX project identifies STM32Cube FW_F1 V1.8.7; `stm32f1xx_hal.c` identifies HAL version 1.1.10. The files were copied from the existing product checkout, not downloaded anew; line endings were normalized to LF, with no other intentional changes. The SPI, I2C, ADC/ADCEx and DAC/DACEx HAL source and headers were subsequently added from the official [stm32f1xx-hal-driver v1.1.10 tag](https://github.com/STMicroelectronics/stm32f1xx-hal-driver/tree/v1.1.10), with line endings normalized to LF. This remains a subset, not the complete STM32Cube package.
 
 The included HAL, STM32 device CMSIS and ARM CMSIS directories retain their original license notices and LICENSE.txt files. Their package notices refer to applicable package terms or fallback licenses; see each original notice.
+
+The PCD, HCD, PCDEx and LL USB sources and headers also come from the same official v1.1.10 tag. The local PCD/HCD receive interrupt paths use platform hooks to check the active destination and bounds and to drain invalid FIFO data. Host NAK and error handling returns the result to the owner instead of silently rearming, and frame overruns report errors. LL role initialization preserves pending OTG and role-transition events during managed OTG adoption; see `hardware/mcu/stm32f105/usb_stm32f105.c`. RCC and RCCEx correct connectivity-line PLL x6.5 with HSI/2, decode auxiliary/I2S PLL x20, retain fractional intermediate clock frequencies, and replace the predivider source when configuring the main PLL. The vendor copyright and license notices are preserved.
 
 For reproducibility, SHA-256 over the concatenation of each sorted POSIX relative path (UTF-8), a NUL byte, and the raw SHA-256 digest of that file is `d9e49912e442fb4b98b38c9f8eb4ed30154f50dd136a6223a0c8af27434a1680` for the original 70 files, excluding this README.
 

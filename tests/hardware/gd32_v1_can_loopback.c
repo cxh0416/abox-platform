@@ -51,12 +51,14 @@ static int loop(unsigned bus, uint32_t id, uint8_t extended, uint8_t remote)
 
 void Reset_Handler(void)
 {
+    ABoxCanConfig can = {250000U, 15U, 2U, 1U, ABOX_CAN_SILENT_LOOPBACK, {1U, 0U, 0U}, {0}};
     for (uint32_t *p = &_sbss; p < &_ebss; ++p) *p = 0U;
     g_can_bench_result[0] = (uint32_t)clock_init();
     if (g_can_bench_result[0]) {
-        g_can_bench_result[1] = (uint32_t)ABoxCanPort_Init(0U, 250000U, ABOX_CAN_SILENT_LOOPBACK);
+        g_can_bench_result[1] = (uint32_t)ABoxCanPort_Init(0U, &can);
         if (g_can_bench_result[1]) g_can_bench_result[2] = (uint32_t)loop(0U, 0x123U, 0U, 0U);
-        g_can_bench_result[3] = (uint32_t)ABoxCanPort_Init(1U, 500000U, ABOX_CAN_SILENT_LOOPBACK);
+        can.bitrate = 500000U;
+        g_can_bench_result[3] = (uint32_t)ABoxCanPort_Init(1U, &can);
         if (g_can_bench_result[3]) {
             g_can_bench_result[4] = (uint32_t)loop(1U, 0x1234567U, 1U, 0U);
             g_can_bench_result[5] = (uint32_t)loop(1U, 0x456U, 0U, 1U);

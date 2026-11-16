@@ -37,27 +37,22 @@ source = (product / "app/Core/Src/main.c" if meal else cloud).read_text(encoding
 rx_name = "g_ec800_rx" if meal or not patrol else "g_cloud.ec800_rx"
 uart = """
 #include "abox_ec800_rx.h"
+#include "abox_uart.h"
+#include "abox_board.h"
 #include <assert.h>
 #include <string.h>
 #define HAL_OK 0
 #define UART1_RX_BUF_SZ 1088U
 #define APP_LOGE(...) ((void)++logs)
-typedef int UART_HandleTypeDef;
-UART_HandleTypeDef huart1;
 ABoxEc800Rx g_ec800_rx;
 struct { ABoxEc800Rx ec800_rx; uint8_t uart_dma[1088]; } g_cloud;
 uint8_t uart1_rx_buf[1088], g_uart_dma[1088];
 static unsigned stops, starts, logs;
 static int stop_status, start_status;
-static int HAL_UART_DMAStop(UART_HandleTypeDef *u)
-{ (void)u; ++stops; return stop_status; }
-static int HAL_UART_AbortReceive(UART_HandleTypeDef *u)
-{ return HAL_UART_DMAStop(u); }
-static int HAL_UARTEx_ReceiveToIdle_DMA(UART_HandleTypeDef *u, uint8_t *b, uint16_t n)
-{ (void)u; assert(b && n>=1088); ++starts; return start_status; }
-static int ABoxModemPort_AbortRx(void) { ++stops; return stop_status == 0; }
-static int ABoxModemPort_StartRx(uint8_t *b, uint16_t n)
-{ assert(b && n>=1088); ++starts; return start_status == 0; }
+int ABoxUart_AbortRx(ABoxUartId id) { assert(id==ABOX_BOARD_UART_MODEM);++stops;return stop_status==0; }
+int ABoxUart_StartRx(ABoxUartId id,ABoxUartRxMode mode,uint8_t *b,uint16_t n)
+{ assert(id==ABOX_BOARD_UART_MODEM && mode==ABOX_UART_RX_CIRCULAR_DMA && b && n>=1088);++starts;return start_status==0; }
+
 """
 if not meal:
     uart += function(source, "uart_start_rx") + "\n"
@@ -142,6 +137,7 @@ for name, contents in (("uart", uart), ("enrollment", enroll)):
     harness.write_text(contents, encoding="utf-8", newline="\n")
     exe = build / (name + ".exe")
     includes = [platform / "components" / p / "include" for p in ("core", "ec800", "enrollment", "mqtt")]
+    includes.append(platform / "hardware/api/include")
     command = [shutil.which("gcc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
                "-Wno-unused-variable", "-Wno-unused-function",
                *["-I" + str(p) for p in includes], str(harness)]

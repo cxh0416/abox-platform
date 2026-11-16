@@ -1,13 +1,14 @@
 #include <assert.h>
 #include "main.h"
 #include "abox_platform_port.h"
+#include "abox_uart.h"
 #include "ec_power.h"
 
 TestFlash test_flash;
 UART_HandleTypeDef huart1;
 static HAL_StatusTypeDef unlock_status;
 static uint32_t post_unlock_cr;
-static unsigned unlock_calls;
+static unsigned unlock_calls, erase_calls;
 static int bind_ok = 1, power_ok = 1;
 static unsigned power_calls;
 static uint32_t program_type, program_address;
@@ -15,14 +16,15 @@ static uint64_t program_value;
 HAL_StatusTypeDef HAL_FLASH_Unlock(void) { unlock_calls++; test_flash.CR=post_unlock_cr; return unlock_status; }
 HAL_StatusTypeDef HAL_FLASH_Lock(void) { return HAL_OK; }
 HAL_StatusTypeDef HAL_FLASH_Program(uint32_t a, uint32_t b, uint64_t c) { program_type=a;program_address=b;program_value=c;return HAL_OK; }
-HAL_StatusTypeDef HAL_FLASHEx_Erase(FLASH_EraseInitTypeDef *a, uint32_t *b) { (void)a;(void)b;return HAL_OK; }
+HAL_StatusTypeDef HAL_FLASHEx_Erase(FLASH_EraseInitTypeDef *a, uint32_t *b) { (void)a;(void)b;++erase_calls;return HAL_OK; }
 uint32_t HAL_GetTick(void) { return 0; }
-HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *a,uint8_t *b,uint16_t c,uint32_t d) { (void)a;(void)b;(void)c;(void)d;return HAL_OK; }
+int ABoxUart_SendBlocking(ABoxUartId id, const uint8_t *data, uint16_t length, uint32_t timeout)
+{ (void)id; (void)data; (void)length; (void)timeout; return 1; }
 void HAL_GPIO_WritePin(void *a,uint16_t b,unsigned c) { (void)a;(void)b;(void)c; }
 int ABox_PlatformPortBind(const ABoxPlatformPort *p) { return p!=0 && bind_ok; }
 uint8_t ABox_EcPower_SetConfig(const ABoxEcPowerConfig *p) { ++power_calls; return p!=0 && power_ok; }
 #include "../targets/stm32f105_ec800_v1/platform_port_stm32f105.c"
-static void check(HAL_StatusTypeDef status,uint32_t cr,int expected) { unlock_status=status; post_unlock_cr=cr; unlock_calls=0; assert(flash_begin(0)==expected); assert(unlock_calls==1); }
+static void check(HAL_StatusTypeDef status,uint32_t cr,int expected) { unlock_status=status; post_unlock_cr=cr; unlock_calls=0; assert(flash_begin(0)==expected); assert(unlock_calls==1); if (expected) flash_end(0); }
 int main(void) {
     const uint8_t bytes[] = {0x12, 0x34, 0x56, 0x78};
     check(HAL_OK,0,1);
@@ -31,11 +33,19 @@ int main(void) {
     check(HAL_OK,FLASH_CR_LOCK,0);
     check(HAL_BUSY,0,0);
     check(HAL_TIMEOUT,0,0);
+    unlock_status=HAL_OK;post_unlock_cr=0;assert(flash_begin(0));
     assert(flash_write(0, 0x0803FFFEU, bytes, 2U));
     assert(program_type == FLASH_TYPEPROGRAM_HALFWORD && program_address == 0x0803FFFEU && program_value == 0x3412U);
     assert(!flash_write(0, 0x0803FFFFU, bytes, 2U));
     assert(flash_write(0, 0x0803FFFCU, bytes, 4U));
     assert(program_type == FLASH_TYPEPROGRAM_WORD && program_value == 0x78563412U);
+    assert(!flash_write(0, 0x07FFFFFEU, bytes, 2U));
+    assert(!flash_write(0, 0x08040000U, bytes, 2U));
+    assert(!flash_erase_page(0, 0x0803F801U) && !flash_erase_page(0, 0x08040000U));
+    assert(!erase_calls && flash_erase_page(0, 0x0803F800U) && erase_calls == 1U);
+    test_flash.CR = FLASH_CR_LOCK;
+    assert(!flash_write(0, 0x0803FFFCU, bytes, 4U) && !flash_erase_page(0, 0x0803F800U));
+    test_flash.CR = 0; flash_end(0);
     assert(ABoxStm32F105Ec800Port_TryInit());
     bind_ok = 0; power_calls = 0;
     assert(!ABoxStm32F105Ec800Port_TryInit() && power_calls == 0);

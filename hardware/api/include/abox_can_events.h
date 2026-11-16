@@ -11,7 +11,13 @@ typedef struct {
     uint32_t error_status, tx_status;
     uint32_t interrupt_enable, interrupt_status, fifo0_status;
     uint32_t mailbox[3][4];
+    uint32_t fifo1_status;
 } ABoxCanSnapshot;
+
+/* Live error-status bits in the normalized F105 snapshot. */
+#define ABOX_CAN_STATUS_WARNING  0x00000001U
+#define ABOX_CAN_STATUS_PASSIVE  0x00000002U
+#define ABOX_CAN_STATUS_BUS_OFF  0x00000004U
 
 /* F105 diagnostic error bits, compatible across the supported controllers. */
 #define ABOX_CAN_ERROR_WARNING       0x00000001U
@@ -41,6 +47,8 @@ typedef struct {
     void (*abort_mask)(void *context, uint8_t mailbox_mask);
     int (*receive)(void *context, ABoxCanFrame *frame);
     void (*clear_error)(void *context);
+    int (*receive_fifo1)(void *context,ABoxCanFrame *frame);
+    void (*clear_fifo_overflow)(void *context,unsigned fifo);
 } ABoxCanEventHardware;
 
 typedef struct {
@@ -52,15 +60,21 @@ typedef struct {
     void (*error)(void *context, const ABoxCanSnapshot *snapshot, uint32_t error_bits);
     void (*irq_snapshot)(void *context, const ABoxCanSnapshot *snapshot);
     void (*irq_done)(void *context);
+    void (*receive_fifo1)(void *context,const ABoxCanFrame *frame);
+    void (*fifo_overflow)(void *context,unsigned fifo);
 } ABoxCanEventCallbacks;
 
 typedef struct {
-    ABoxCanEventHardware hardware;
-    ABoxCanEventCallbacks callbacks;
+    const ABoxCanEventHardware *hardware;
+    const ABoxCanEventCallbacks *callbacks;
 } ABoxCanEvents;
 
-/* All operations for one controller, including interrupt handling, must be
- * serialized by the owner. Callbacks run in the caller's context. */
+/* Initialize unused callback fields to zero. FIFO overflow flags can coalesce
+ * multiple losses; callbacks do not report a lost-frame count. All operations
+ * for one controller, including interrupt handling, must be
+ * serialized by the owner. Callbacks run in the caller's context. The
+ * hardware and callback tables and their contexts must remain valid until
+ * this events object is no longer bound or used. */
 int ABoxCanEvents_Init(ABoxCanEvents *events, const ABoxCanEventHardware *hardware,
                        const ABoxCanEventCallbacks *callbacks);
 int ABoxCanEvents_Reap(ABoxCanEvents *events);

@@ -1,14 +1,15 @@
 #include <stdint.h>
 #include "gd32f10x.h"
-#include "abox_serial_port.h"
-#include "abox_gd32_serial.h"
+#include "abox_uart.h"
+#include "abox_platform_port.h"
+#include "abox_board.h"
 
 extern uint32_t _estack, _sbss, _ebss;
 void Reset_Handler(void);
 static void Default_Handler(void) { for (;;) {} }
-void UART4_IRQHandler(void) { ABoxGdSerial_IrqHandler(); }
+void UART4_IRQHandler(void) { ABoxUart_Irq(ABOX_BOARD_UART_BUS); }
 uint32_t SystemCoreClock = 8000000U;
-uint32_t ABox_PortGetTickMs(void) { return 0U; }
+const ABoxPlatformPort *ABox_PlatformPortGet(void) { return 0; }
 
 /* Values can be inspected by a debugger without changing Flash. */
 volatile uint32_t g_uart_bench_ready, g_uart_bench_rx, g_uart_bench_tx, g_uart_bench_errors;
@@ -16,16 +17,18 @@ static uint8_t rx_buffer[16];
 static const uint8_t request[4] = {0xA5U, 0x3CU, 0x96U, 0x69U};
 static const uint8_t response[4] = {0x5AU, 0xC3U, 0x69U, 0x96U};
 
-static void on_rx(const uint8_t *bytes, uint16_t length)
+static void on_rx(void *context,const uint8_t *bytes, uint16_t length)
 {
+    (void)context;
     if (length != sizeof(request)) { ++g_uart_bench_errors; return; }
     for (unsigned i = 0U; i < sizeof(request); ++i)
         if (bytes[i] != request[i]) { ++g_uart_bench_errors; return; }
     ++g_uart_bench_rx;
-    if (!ABoxSerialPort_Send(response, sizeof(response))) ++g_uart_bench_errors;
+    if (!ABoxUart_Send(ABOX_BOARD_UART_BUS, response, sizeof(response))) ++g_uart_bench_errors;
 }
-static void on_tx(void) { ++g_uart_bench_tx; }
-static void on_error(void) { ++g_uart_bench_errors; }
+static void on_tx(void *context) { (void)context; ++g_uart_bench_tx; }
+static void on_error(void *context) { (void)context; ++g_uart_bench_errors; }
+static const ABoxUartEvents events = {0,on_rx,on_tx,on_error,0};
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Woverride-init"
@@ -39,10 +42,11 @@ const uintptr_t uart_bench_vectors[16U + 68U] = {
 
 void Reset_Handler(void)
 {
-    static const ABoxSerialPortEvents events = {on_rx, on_tx, on_error};
     for (uint32_t *p = &_sbss; p < &_ebss; ++p) *p = 0U;
-    ABoxSerialPort_SetEvents(&events);
-    if (!ABoxSerialPort_Init() || !ABoxSerialPort_StartRx(rx_buffer, sizeof(rx_buffer)))
+    const ABoxUartConfig config = {115200U, 8U, 1U, ABOX_UART_PARITY_NONE, ABOX_UART_FLOW_NONE, .mode=ABOX_UART_ASYNC};
+    if (!ABoxBoardUart_Prepare(ABOX_BOARD_UART_BUS) || !ABoxUart_Open(ABOX_BOARD_UART_BUS,&config) ||
+        !ABoxUart_SetEvents(ABOX_BOARD_UART_BUS,&events) ||
+        !ABoxUart_StartRx(ABOX_BOARD_UART_BUS,ABOX_UART_RX_IDLE,rx_buffer,sizeof(rx_buffer)))
         for (;;) {}
     g_uart_bench_ready = 1U;
     __enable_irq();

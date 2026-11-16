@@ -719,7 +719,7 @@ HAL_StatusTypeDef HAL_RCC_OscConfig(RCC_OscInitTypeDef  *RCC_OscInitStruct)
           assert_param(IS_RCC_PREDIV1_SOURCE(RCC_OscInitStruct->Prediv1Source));
 
           /* Set PREDIV1 source */
-          SET_BIT(RCC->CFGR2, RCC_OscInitStruct->Prediv1Source);
+          MODIFY_REG(RCC->CFGR2, RCC_CFGR2_PREDIV1SRC, RCC_OscInitStruct->Prediv1Source);
 #endif /* RCC_CFGR2_PREDIV1SRC */
 
           /* Set PREDIV1 Value */
@@ -1125,6 +1125,7 @@ uint32_t HAL_RCC_GetSysClockFreq(void)
           /* PLLCLK = PLL2CLK / PREDIV1 * PLLMUL with PLL2CLK = HSE/PREDIV2 * PLL2MUL */
           prediv2 = ((RCC->CFGR2 & RCC_CFGR2_PREDIV2) >> RCC_CFGR2_PREDIV2_Pos) + 1;
           pll2mul = ((RCC->CFGR2 & RCC_CFGR2_PLL2MUL) >> RCC_CFGR2_PLL2MUL_Pos) + 2;
+          if (pll2mul == 17U) pll2mul = 20U;
           pllclk = (uint32_t)(((uint64_t)HSE_VALUE * (uint64_t)pll2mul * (uint64_t)pllmul) / ((uint64_t)prediv2 * (uint64_t)prediv));
         }
         else
@@ -1148,6 +1149,10 @@ uint32_t HAL_RCC_GetSysClockFreq(void)
       {
         /* HSI used as PLL clock source : PLLCLK = HSI/2 * PLLMUL */
         pllclk = (uint32_t)((HSI_VALUE >> 1) * pllmul);
+#if defined(RCC_CFGR2_PREDIV1SRC)
+        /* Connectivity-line encoding 13 represents a multiplier of 6.5. */
+        if (pllmul == 13U) pllclk /= 2U;
+#endif
       }
       sysclockfreq = pllclk;
       break;

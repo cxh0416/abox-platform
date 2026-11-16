@@ -285,7 +285,7 @@ void SystemCoreClockUpdate (void)
       }
       else
       { /* PLL multiplication factor = PLL input clock * 6.5 */
-        pllmull = 13U / 2U; 
+        pllmull = 13U; /* divide the product below to retain the half */
       }
             
       if (pllsource == 0x00U)
@@ -303,7 +303,7 @@ void SystemCoreClockUpdate (void)
         if (prediv1source == 0U)
         { 
           /* HSE oscillator clock selected as PREDIV1 clock entry */
-          SystemCoreClock = (HSE_VALUE / prediv1factor) * pllmull;          
+          SystemCoreClock = (uint32_t)(((uint64_t)HSE_VALUE * pllmull) / prediv1factor);
         }
         else
         {/* PLL2 clock selected as PREDIV1 clock entry */
@@ -311,9 +311,11 @@ void SystemCoreClockUpdate (void)
           /* Get PREDIV2 division factor and PLL2 multiplication factor */
           prediv2factor = ((RCC->CFGR2 & RCC_CFGR2_PREDIV2) >> 4U) + 1U;
           pll2mull = ((RCC->CFGR2 & RCC_CFGR2_PLL2MUL) >> 8U) + 2U; 
-          SystemCoreClock = (((HSE_VALUE / prediv2factor) * pll2mull) / prediv1factor) * pllmull;                         
+          if (pll2mull == 17U) pll2mull = 20U;
+          SystemCoreClock = (uint32_t)(((uint64_t)HSE_VALUE * pll2mull * pllmull) / ((uint64_t)prediv2factor * prediv1factor));
         }
       }
+      if (pllmull == 13U) SystemCoreClock /= 2U;
 #endif /* STM32F105xC */ 
       break;
 

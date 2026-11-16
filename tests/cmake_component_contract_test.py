@@ -123,26 +123,19 @@ endif()''' )
     configure("f105-app-can-events",
               "PRODUCT_CONFIG_DIR ${ABOX_PRODUCT_CONFIG_DIR} HARDWARE stm32f105_ec800_v1 CAN CAN_EVENTS",
               True, attach_function="abox_platform_attach_f105_app")
-    configure("serial-port", "SCHEDULER BAREMETAL COMPONENTS core", True,
-              extra="abox_platform_attach_serial_port(consumer HARDWARE stm32f105_ec800_v1)")
-    configure("serial-port-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,
+    configure("uart-st", "SCHEDULER BAREMETAL COMPONENTS core", True,
+              extra="abox_platform_attach_uart(consumer HARDWARE stm32f105_ec800_v1)")
+    configure("uart-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,
               "unsupported HARDWARE",
-              extra="abox_platform_attach_serial_port(consumer HARDWARE unknown)")
-    configure("serial-port-gd", "SCHEDULER BAREMETAL COMPONENTS core", True,
-              extra="abox_platform_attach_serial_port(consumer HARDWARE gd32f105_ec800_v1)")
+              extra="abox_platform_attach_uart(consumer HARDWARE unknown)")
+    configure("uart-gd", "SCHEDULER BAREMETAL COMPONENTS core", True,
+              extra="abox_platform_attach_uart(consumer HARDWARE gd32f105_ec800_v1)")
     configure("can-port-st", "SCHEDULER BAREMETAL COMPONENTS core", True,
               extra="abox_platform_attach_can_port(consumer HARDWARE stm32f105_ec800_v1)")
     configure("can-port-gd", "SCHEDULER BAREMETAL COMPONENTS core", True,
               extra="abox_platform_attach_can_port(consumer HARDWARE gd32f105_ec800_v1)")
     configure("can-port-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,
               "unsupported HARDWARE", extra="abox_platform_attach_can_port(consumer HARDWARE unknown)")
-    configure("modem-port", "SCHEDULER BAREMETAL COMPONENTS core", True,
-              extra="abox_platform_attach_modem_port(consumer HARDWARE stm32f105_ec800_v1)")
-    configure("modem-port-unknown", "SCHEDULER BAREMETAL COMPONENTS core", False,
-              "unsupported HARDWARE",
-              extra="abox_platform_attach_modem_port(consumer HARDWARE unknown)")
-    configure("modem-port-gd", "SCHEDULER BAREMETAL COMPONENTS core", True,
-              extra="abox_platform_attach_modem_port(consumer HARDWARE gd32f105_ec800_v1)")
     configure("hardware-gd", "SCHEDULER BAREMETAL HARDWARE gd32f105_ec800_v1 COMPONENTS core", True,
               board="v1")
     configure("hardware-gd-invalid-board", "SCHEDULER BAREMETAL HARDWARE gd32f105_ec800_v1 COMPONENTS core", False,

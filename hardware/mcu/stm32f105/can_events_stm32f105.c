@@ -14,6 +14,7 @@ static int snapshot(void *context, ABoxCanSnapshot *out)
     out->interrupt_enable = h->Instance->IER;
     out->interrupt_status = h->Instance->MSR;
     out->fifo0_status = h->Instance->RF0R;
+    out->fifo1_status = h->Instance->RF1R;
     for (uint8_t i = 0U; i < 3U; ++i) {
         out->mailbox[i][0] = h->Instance->sTxMailBox[i].TIR;
         out->mailbox[i][1] = h->Instance->sTxMailBox[i].TDTR;
@@ -60,6 +61,13 @@ static void abort_mask(void *context, uint8_t mask)
 
 static int receive(void *context, ABoxCanFrame *frame)
 { return ABoxCanPort_Receive(*(unsigned *)context, frame); }
+static int receive_fifo1(void *context,ABoxCanFrame *frame)
+{ return ABoxCanPort_ReceiveFifo(*(unsigned *)context,1U,frame); }
+static void clear_fifo_overflow(void *context,unsigned fifo)
+{
+    CAN_TypeDef *controller=handle(context)->Instance;
+    if (fifo) controller->RF1R=1U<<4U; else controller->RF0R=1U<<4U;
+}
 static void clear_error(void *context)
 {
     CAN_HandleTypeDef *h = handle(context);
@@ -67,29 +75,28 @@ static void clear_error(void *context)
     h->Instance->MSR = 1U << 2U;
 }
 
+static const ABoxCanEventHardware hardware[2] = {
+    {&buses[0], snapshot, clear_tx, send_mailbox, abort_mask, receive, clear_error, receive_fifo1, clear_fifo_overflow},
+    {&buses[1], snapshot, clear_tx, send_mailbox, abort_mask, receive, clear_error, receive_fifo1, clear_fifo_overflow}
+};
+
 int ABoxCanPort_BindEvents(unsigned bus, ABoxCanEvents *events,
                            const ABoxCanEventCallbacks *callbacks)
 {
-    ABoxCanEventHardware hardware;
     if (bus >= 2U || !ABoxCanPort_IsReady(bus)) return 0;
-    hardware.context = &buses[bus];
-    hardware.snapshot = snapshot;
-    hardware.clear_tx = clear_tx;
-    hardware.send_mailbox = send_mailbox;
-    hardware.abort_mask = abort_mask;
-    hardware.receive = receive;
-    hardware.clear_error = clear_error;
-    return ABoxCanEvents_Init(events, &hardware, callbacks);
+    return ABoxCanEvents_Init(events, &hardware[bus], callbacks);
 }
 
 int ABoxCanPort_EnableEventIrq(unsigned bus, ABoxCanEvents *events)
 {
     CAN_HandleTypeDef *h;
-    if (bus >= 2U || !events || !ABoxCanPort_IsReady(bus) || bound[bus]) return 0;
+    if (bus >= 2U || !events || !events->callbacks || !events->hardware || !ABoxCanPort_IsReady(bus) || bound[bus]) return 0;
     h = handle(&buses[bus]);
     bound[bus] = events;
     h->Instance->IER |= 3U | (1U << 8U) | (1U << 9U) | (1U << 10U) |
                         (1U << 11U) | (1U << 15U);
+    if (events->callbacks->receive_fifo1) h->Instance->IER |= 1U<<4U;
+    if (events->callbacks->fifo_overflow) h->Instance->IER |= (1U<<3U)|(1U<<6U);
     return 1;
 }
 

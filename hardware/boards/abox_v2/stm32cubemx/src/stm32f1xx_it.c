@@ -23,6 +23,28 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "abox_boot_v2.h"
+#include "abox_uart.h"
+#ifdef ABOX_PVD_API_ENABLED
+#include "abox_pvd.h"
+void PVD_IRQHandler(void) { ABoxPvd_Irq(); }
+#endif
+#ifdef ABOX_I2C_API_ENABLED
+#include "abox_i2c.h"
+void I2C1_EV_IRQHandler(void) { ABoxI2c_Irq(1U); }
+void I2C1_ER_IRQHandler(void) { ABoxI2c_Irq(1U); }
+void I2C2_EV_IRQHandler(void) { ABoxI2c_Irq(2U); }
+void I2C2_ER_IRQHandler(void) { ABoxI2c_Irq(2U); }
+#endif
+#ifdef ABOX_DMA_API_ENABLED
+#include "abox_dma.h"
+#endif
+static void abox_dma_irq(unsigned controller, unsigned channel)
+{
+  ABoxUart_DmaIrq(controller, channel);
+#ifdef ABOX_DMA_API_ENABLED
+  ABoxDma_Irq(controller, channel);
+#endif
+}
 #ifdef ABOX_CAN_EVENTS_ENABLED
 #include "abox_can_events.h"
 static void abox_can_irq(unsigned bus)
@@ -34,7 +56,7 @@ static void abox_can_irq(unsigned bus)
 }
 #define ABOX_CAN_IRQ(handle, bus) abox_can_irq(bus)
 #else
-#define ABOX_CAN_IRQ(handle, bus) HAL_CAN_IRQHandler(handle)
+#define ABOX_CAN_IRQ(handle, bus) ((void)(handle), (void)(bus))
 #endif
 /* USER CODE END Includes */
 
@@ -228,7 +250,7 @@ void DMA1_Channel4_IRQHandler(void)
   /* USER CODE BEGIN DMA1_Channel4_IRQn 0 */
 
   /* USER CODE END DMA1_Channel4_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart1_tx);
+  abox_dma_irq(1U, 4U);
   /* USER CODE BEGIN DMA1_Channel4_IRQn 1 */
 
   /* USER CODE END DMA1_Channel4_IRQn 1 */
@@ -242,7 +264,7 @@ void DMA1_Channel5_IRQHandler(void)
   /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
 
   /* USER CODE END DMA1_Channel5_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart1_rx);
+  abox_dma_irq(1U, 5U);
   /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
 
   /* USER CODE END DMA1_Channel5_IRQn 1 */
@@ -326,7 +348,7 @@ void USART1_IRQHandler(void)
   /* USER CODE BEGIN USART1_IRQn 0 */
 
   /* USER CODE END USART1_IRQn 0 */
-  HAL_UART_IRQHandler(&huart1);
+  ABoxUart_Irq(1U);
   /* USER CODE BEGIN USART1_IRQn 1 */
 
   /* USER CODE END USART1_IRQn 1 */
@@ -340,7 +362,7 @@ void UART5_IRQHandler(void)
   /* USER CODE BEGIN UART5_IRQn 0 */
 
   /* USER CODE END UART5_IRQn 0 */
-  HAL_UART_IRQHandler(&huart5);
+  ABoxUart_Irq(5U);
   /* USER CODE BEGIN UART5_IRQn 1 */
 
   /* USER CODE END UART5_IRQn 1 */
@@ -405,3 +427,35 @@ void CAN2_SCE_IRQHandler(void)
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
+
+/* Additional physical UART and DMA vectors for boards that enable them. */
+void DMA1_Channel1_IRQHandler(void) { abox_dma_irq(1U, 1U); }
+void DMA1_Channel2_IRQHandler(void) { abox_dma_irq(1U, 2U); }
+void DMA1_Channel3_IRQHandler(void) { abox_dma_irq(1U, 3U); }
+void DMA1_Channel6_IRQHandler(void) { abox_dma_irq(1U, 6U); }
+void DMA1_Channel7_IRQHandler(void) { abox_dma_irq(1U, 7U); }
+void DMA2_Channel1_IRQHandler(void) { abox_dma_irq(2U, 1U); }
+void DMA2_Channel2_IRQHandler(void) { abox_dma_irq(2U, 2U); }
+void DMA2_Channel3_IRQHandler(void) { abox_dma_irq(2U, 3U); }
+void DMA2_Channel4_IRQHandler(void) { abox_dma_irq(2U, 4U); }
+void DMA2_Channel5_IRQHandler(void) { abox_dma_irq(2U, 5U); }
+void USART2_IRQHandler(void) { ABoxUart_Irq(2U); }
+void USART3_IRQHandler(void) { ABoxUart_Irq(3U); }
+void UART4_IRQHandler(void) { ABoxUart_Irq(4U); }
+#ifdef ABOX_I2S_API_ENABLED
+#include "abox_i2s.h"
+void SPI2_IRQHandler(void) { ABoxI2s_Irq(2U); }
+void SPI3_IRQHandler(void) { ABoxI2s_Irq(3U); }
+#endif
+#ifdef ABOX_WWDG_API_ENABLED
+#include "abox_wwdg.h"
+void WWDG_IRQHandler(void) { ABoxWwdg_Irq(); }
+#endif
+#ifdef ABOX_ADC_API_ENABLED
+#include "abox_adc.h"
+void ADC1_2_IRQHandler(void) { ABoxAdc_Irq(1U);ABoxAdc_Irq(2U); }
+#endif
+#ifdef ABOX_USB_API_ENABLED
+#include "abox_usb.h"
+void OTG_FS_IRQHandler(void) { ABoxUsb_Irq(); }
+#endif

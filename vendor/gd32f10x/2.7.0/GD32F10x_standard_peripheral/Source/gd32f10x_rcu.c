@@ -1147,9 +1147,42 @@ uint32_t rcu_clock_freq_get(rcu_clock_freq_enum clock)
         cksys_freq = ck_src * pllmf;
 
     #ifdef GD32F10X_CL
-        if(15U == pllmf){
-            /* PLL source clock multiply by 6.5 */
-            cksys_freq = ck_src * 6U + ck_src / 2U;
+        /* Retain fractional-Hz intermediate PLL inputs until the final result. */
+        {
+            uint64_t numerator;
+            uint32_t denominator = 1U;
+            if(RCU_PLLSRC_HXTAL == pllsel){
+                numerator = HXTAL_VALUE;
+                denominator = (RCU_CFG1 & RCU_CFG1_PREDV0) + 1U;
+                if(RCU_PREDV0SRC_CKPLL1 == (RCU_CFG1 & RCU_CFG1_PREDV0SEL)){
+                    predv1 = (uint32_t)((RCU_CFG1 & RCU_CFG1_PREDV1) >> 4) + 1U;
+                    pll1mf = (uint32_t)((RCU_CFG1 & RCU_CFG1_PLL1MF) >> 8) + 2U;
+                    if(17U == pll1mf) pll1mf = 20U;
+                    numerator *= pll1mf;
+                    denominator *= predv1;
+                }
+            }else{
+                numerator = IRC8M_VALUE/2U;
+            }
+            if(15U == pllmf){ numerator *= 13U;denominator *= 2U; }
+            else numerator *= pllmf;
+            /* Divide without a 64-bit runtime helper: this driver is also used
+             * by freestanding builds linked with -nostdlib. All denominator
+             * factors are small hardware fields, so the remainder cannot
+             * overflow while shifting. Keep the low 32 bits of the quotient,
+             * matching the original cast for invalid overclocked settings. */
+            {
+                uint32_t hi = (uint32_t)(numerator >> 32U), lo = (uint32_t)numerator;
+                uint32_t remainder = 0U, quotient = 0U;
+                for(uint32_t bit = 0U; bit < 64U; ++bit){
+                    remainder = (remainder << 1U) | (hi >> 31U);
+                    hi = (hi << 1U) | (lo >> 31U);
+                    lo <<= 1U;
+                    quotient <<= 1U;
+                    if(remainder >= denominator){ remainder -= denominator; quotient |= 1U; }
+                }
+                cksys_freq = quotient;
+            }
         }
     #endif /* GD32F10X_CL */
 

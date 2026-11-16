@@ -14,6 +14,7 @@ for enabled in (False, True):
                "-I" + str(vendor / "CMSIS"), "-I" + str(vendor / "CMSIS/GD/GD32F10x/Include"),
                "-I" + str(vendor / "GD32F10x_standard_peripheral/Include"),
                "-I" + str(root / "components/boot_v2/include"),
+               "-I" + str(root / "hardware/api/include"),
                "-c", str(gd / "startup_gd32f105.c"), "-o", str(obj)]
     if enabled:
         command.insert(1, "-DABOX_GD_FREERTOS=1")

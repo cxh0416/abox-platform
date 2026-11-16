@@ -11,6 +11,7 @@ ABox_Platform/
 ├── components/                 # 已有公共组件：MQTT、OTA、EC800、存储等
 ├── hardware/
 │   ├── api/                    # ABox 自有硬件接口和行为约定
+│   ├── internal/               # 板卡映射和 MCU 后端内部合同
 │   ├── mcu/
 │   │   ├── stm32f105/          # ST HAL 适配、中断及芯片初始化
 │   │   └── gd32f105/           # GD 标准固件库适配、中断及芯片初始化
@@ -28,7 +29,7 @@ ABox_Platform/
 
 ## 边界
 
-- `hardware/api` 定义 UART、GPIO、Flash、时间、临界区及后续实际需要的 CAN/DMA 能力及成功、失败、超时、缓冲区归属等语义。复用现有 `ABoxPlatformPort`、`ABoxBoardIoPort` 等接口，迁移时不平行复制一套功能相同的接口。
+- `hardware/api` 定义 UART、CAN、GPIO、外部中断、SPI/I2S、I2C、ADC、DAC、RTC、定时器/PWM、DMA、看门狗、Flash、MCU 时钟、时间和临界区等接口，以及成功、失败、超时、缓冲区及资源归属语义。复用现有 `ABoxPlatformPort`、`ABoxBoardIoPort` 等接口，迁移时不平行复制一套功能相同的接口。
 - `hardware/mcu` 将 ABox 接口映射到对应厂商库，管理芯片相关的启动、时钟、外设和中断；不引用送餐车双锁、显示或 MQTT 业务。
 - `hardware/boards` 描述具体 PCB 的芯片、引脚、外设、供电、输入数量和极性；板卡版本与 MCU 类型分开表达。用户确认 V1 为 GD32F105RCT6，V2 为 STM32F105RCT6，两版外围相同，V2 新增四路输入；现有端子映射以板型合同和实测核验为准。V3 按最终设计增加板卡配置，不预设芯片型号。
 - `vendor` 固定上游来源、版本、校验信息和授权；应用功能只接触 ABox 接口，厂商头文件限于对应硬件实现和启动部分。STM32F1 HAL 1.1.10 和 CMSIS 已固定在共享 `vendor` 目录，送餐车 STM32 App 已接入；冻结 Boot 保持既有构建输入。
@@ -36,19 +37,19 @@ ABox_Platform/
 - `tests` 区分接口契约的主机测试、各实现交叉编译及实际硬件测试。硬件测试为独立的台架目标：Flash 测试只使用明确分配的测试页，不得覆盖 Boot 代码、描述符、状态、配置或产品 App；GPIO/CAN 等测试须根据接线和负载选择执行。记录实际板卡、固件、步骤和结果。
 - 产品仓库选择平台支持的板卡和 MCU 组合，并提供产品业务与接线语义，例如锁控和屏幕；不能通过复制公共驱动或维护另一份公共 Boot 接入。
 
-## 选择与兼容
+## 选择与配置
 
 构建时需显式指定并校验板卡与 MCU 组合，结合具体型号选择启动代码、链接脚本、驱动源和 Boot 产物。最终命令行和 API 以实现为准；未知或未完成的组合在配置阶段报错。不会在产品业务中散落 `#ifdef` 厂商分支，也不会仅凭型号前缀认定芯片兼容。
 
-保留现有 `abox_platform_attach_standard_app`、`stm32f105_ec800_v1` 等接入口及默认行为；新接口先按需新增并在送餐车试点，再迁移其他产品。`stm32f105_ec800_v1` 是历史合同名，后缀不等同 PCB V1；`ABOX_BOARD_VERSION` 目前只选择现有输入映射，不代表 GD MCU 适配。
+`stm32f105_ec800_v1` 是历史硬件合同名称，后缀不等同 PCB V1。产品显式选择板型、MCU 和外设配置，板级启动按数组打开请求的 UART，不再隐式启动 CAN。公共 UART 使用物理实例编号，由板卡配置引脚和 IRQ；CAN 时序和策略由产品提供；STM32/GD32 不再通过旧产品的 CAN 回调桥接。接口合同、已实现模式及仍未覆盖的外设见 [硬件接口](../../hardware/README.md)。
 
-## 当前进度
+## 当前实现
 
-- `hardware/api` 提供送餐车使用的串口、调制解调器串口和 MCU UID 接口，复用既有 `ABoxPlatformPort` 和 `ABoxBoardIoPort`。STM32 和 GD 均有试点实现；产品的锁电源与 LED 通过板载 IO Port 接入。
-- `hardware/mcu/gd32f105` 提供启动、中断、FMC、UART4、USART0 DMA、TIMER1 和 UID 实现；`hardware/boards/abox_v1` 提供 GD V1 GPIO 和板级初始化。固定 GD32F10x 官方库 2.7.0；来源、授权和摘要见 `vendor/gd32f10x/2.7.0/README.md`。
-- 送餐车 GD V1 App 和默认 STM32 App 均通过交叉构建；接口桩测试覆盖串口接收、DMA 边界、Flash 错误、板级 IO 和时基。V1 已完成下方所列的台架检查，GD 输入映射与外围反馈仍须核对。
-- `targets/gd32f105_ec800_v1` 是 App 的硬件选择合同。`targets/gd32f105_abox_boot` 是独立 GD Boot 目标：已接入公共状态机、GD Flash 和 UFS 安装器，交叉构建及镜像布局检查通过。V1 已实测从 Flash 启动、擦写测试页以及从 UFS 稳定槽重装现有 App；候选镜像安装、试运行确认、回滚及掉电恢复尚未实测。新候选 `abox-boot-2.3.0-gd` 按公共实现声明 Boot V2 能力。冻结 STM32 Boot 的已发布产物未修改；当前无法将 GD App 与冻结 STM32 Boot 作为正式组合打包。
-- 板卡 V2 的启动、CubeMX 外设与中断源文件和输入引脚表位于 `hardware/boards/abox_v2`，兼容既有产品的 STM32 板载 IO Port 仍在 `targets/stm32f105_ec800_v1`；CAN Port 已提供 STM32/GD 实现，并有 GD V1 UART 和静默 CAN 回环台架目标；真实 CAN 总线及 STM32 实板尚未验证。其他产品继续通过既有入口接入，不因试点自动获得 GD 支持。
+- 公共 UART、CAN、GPIO、引脚复用、外部中断、SPI/I2S、I2C、ADC、DAC、RTC、定时器/PWM、DMA、USB 控制器、CRC、备份寄存器、电压检测、Flash、MCU 时钟、时间、临界区、MCU 复位原因和看门狗已有 STM32F105、GD32F105 接入；公共服务的现有 Flash 和时间回调继续由标准板端口提供。通用 API 不为旧串口和 GD CAN 回调接口保留兼容入口；已实现模式与未覆盖能力以硬件接口说明为准。
+- 现有产品仍有直接使用 `HAL_GetTick` 等厂商风格接口的代码，尚未完全达到业务只依赖公共接口的目标；STM32 后端除 HAL 外也有寄存器操作，GD 后端使用标准外设库及寄存器。增加其他 MCU 时仍须实现对应后端和板级适配。
+- 三个 V4 产品的工作区分别选择 MCU 后端；巡防车和清扫车使用公共 CAN 事件，送餐车没有活动的 CAN 业务。产品构建及主机回归需要分别验证，不能替代实际设备、收发器、电源、运动或 OTA 测试。
+- 固定 GD32F10x 官方库 2.7.0 与 STM32F1 HAL 1.1.10 保留来源及许可说明；冻结 Boot 产物不因 App 工作区修改而更新。
+- 本文以下带日期的台架记录是历史证据，不能作为本轮接口迁移的实机验收。
 
 ## 公共 Boot 安装器
 

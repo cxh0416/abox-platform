@@ -6,7 +6,7 @@ import sys
 root = Path(__file__).resolve().parents[1]
 vendor = root / "vendor/stm32f1/hal-1.1.10"
 out = Path(sys.argv[2]) / "stm32f105-can-vendor.o"
-includes = [root / "hardware/api/include", root / "tests/stm32_vendor_stub",
+includes = [root / "hardware/api/include", root / "hardware/internal/include", root / "tests/stm32_vendor_stub",
             root / "targets/stm32f105_abox_boot/Core/Inc",
             vendor / "STM32F1xx_HAL_Driver/Inc", vendor / "STM32F1xx_HAL_Driver/Inc/Legacy",
             vendor / "CMSIS/Device/ST/STM32F1xx/Include", vendor / "CMSIS/Include"]

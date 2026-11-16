@@ -7,6 +7,7 @@ extern uint32_t test_can_registers[2][128];
 #define CAN_INTEN(p) test_can_registers[TEST_CAN_INDEX(p)][5]
 #define CAN_STAT(p) test_can_registers[TEST_CAN_INDEX(p)][1]
 #define CAN_RFIFO0(p) test_can_registers[TEST_CAN_INDEX(p)][3]
+#define CAN_RFIFO1(p) test_can_registers[TEST_CAN_INDEX(p)][4]
 #define CAN_ERR_ERRN (7U << 4U)
 #define CAN_STAT_ERRIF (1U << 2U)
 #define CAN_INTEN_TMEIE (1U << 0U)
@@ -43,6 +44,8 @@ typedef struct {
 #define CAN_TX_MESSAGE_STRUCT 2U
 #define CAN_RX_MESSAGE_STRUCT 3U
 #define CAN_NORMAL_MODE 0U
+#define CAN_LOOPBACK_MODE 1U
+#define CAN_SILENT_MODE 2U
 #define CAN_SILENT_LOOPBACK_MODE 3U
 #define CAN_BT_SJW_1TQ 0U
 #define CAN_BT_BS1_15TQ 14U
@@ -50,6 +53,7 @@ typedef struct {
 #define CAN_FILTERMODE_MASK 0U
 #define CAN_FILTERBITS_32BIT 1U
 #define CAN_FIFO0 0U
+#define CAN_FIFO1 1U
 #define CAN_NOMAILBOX 3U
 #define CAN_FF_STANDARD 0U
 #define CAN_FF_EXTENDED 4U

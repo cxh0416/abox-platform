@@ -27,6 +27,7 @@ static int snapshot(void *context, ABoxCanSnapshot *out)
     out->interrupt_enable = CAN_INTEN(peripheral);
     out->interrupt_status = CAN_STAT(peripheral);
     out->fifo0_status = CAN_RFIFO0(peripheral);
+    out->fifo1_status = CAN_RFIFO1(peripheral);
     for (uint8_t i = 0U; i < 3U; ++i) {
         out->mailbox[i][0] = CAN_TMI(peripheral, i);
         out->mailbox[i][1] = CAN_TMP(peripheral, i);
@@ -73,6 +74,10 @@ static void abort_mask(void *context, uint8_t mask)
 
 static int receive(void *context, ABoxCanFrame *frame)
 { return ABoxCanPort_Receive(*(unsigned *)context, frame); }
+static int receive_fifo1(void *context,ABoxCanFrame *frame)
+{ return ABoxCanPort_ReceiveFifo(*(unsigned *)context,1U,frame); }
+static void clear_fifo_overflow(void *context,unsigned fifo)
+{ if (fifo) CAN_RFIFO1(instance(context))=1U<<4U; else CAN_RFIFO0(instance(context))=1U<<4U; }
 static void clear_error(void *context)
 {
     uint32_t peripheral = instance(context);
@@ -80,38 +85,40 @@ static void clear_error(void *context)
     CAN_STAT(peripheral) = CAN_STAT_ERRIF;
 }
 
+static const ABoxCanEventHardware hardware[2] = {
+    {&buses[0], snapshot, clear_tx, send_mailbox, abort_mask, receive, clear_error, receive_fifo1, clear_fifo_overflow},
+    {&buses[1], snapshot, clear_tx, send_mailbox, abort_mask, receive, clear_error, receive_fifo1, clear_fifo_overflow}
+};
+
 int ABoxCanPort_BindEvents(unsigned bus, ABoxCanEvents *events,
                            const ABoxCanEventCallbacks *callbacks)
 {
-    ABoxCanEventHardware hardware;
     if (bus >= 2U || !ABoxCanPort_IsReady(bus)) return 0;
-    hardware.context = &buses[bus];
-    hardware.snapshot = snapshot;
-    hardware.clear_tx = clear_tx;
-    hardware.send_mailbox = send_mailbox;
-    hardware.abort_mask = abort_mask;
-    hardware.receive = receive;
-    hardware.clear_error = clear_error;
-    return ABoxCanEvents_Init(events, &hardware, callbacks);
+    return ABoxCanEvents_Init(events, &hardware[bus], callbacks);
 }
 
 int ABoxCanPort_EnableEventIrq(unsigned bus, ABoxCanEvents *events)
 {
     uint32_t peripheral;
-    if (bus >= 2U || !events || !ABoxCanPort_IsReady(bus) || bound[bus]) return 0;
+    if (bus >= 2U || !events || !events->callbacks || !events->hardware || !ABoxCanPort_IsReady(bus) || bound[bus]) return 0;
     peripheral = bus ? CAN1 : CAN0;
     bound[bus] = events;
     CAN_INTEN(peripheral) |= CAN_INTEN_TMEIE | CAN_INTEN_RFNEIE0 | CAN_INTEN_WERRIE |
                              CAN_INTEN_PERRIE | CAN_INTEN_BOIE | CAN_INTEN_ERRNIE | CAN_INTEN_ERRIE;
+    if (events->callbacks->receive_fifo1) CAN_INTEN(peripheral) |= 1U<<4U;
+    if (events->callbacks->fifo_overflow) CAN_INTEN(peripheral) |= (1U<<3U)|(1U<<6U);
 #ifdef ABOX_CAN_EVENTS_ENABLED
     NVIC_SetPriority(bus ? CAN1_TX_IRQn : CAN0_TX_IRQn, ABOX_CAN_TX_IRQ_PRIORITY);
     NVIC_SetPriority(bus ? CAN1_RX0_IRQn : CAN0_RX0_IRQn, ABOX_CAN_RX_IRQ_PRIORITY);
+    NVIC_SetPriority(bus ? CAN1_RX1_IRQn : CAN0_RX1_IRQn, ABOX_CAN_RX_IRQ_PRIORITY);
     NVIC_SetPriority(bus ? CAN1_EWMC_IRQn : CAN0_EWMC_IRQn, ABOX_CAN_RX_IRQ_PRIORITY);
     NVIC_ClearPendingIRQ(bus ? CAN1_TX_IRQn : CAN0_TX_IRQn);
     NVIC_ClearPendingIRQ(bus ? CAN1_RX0_IRQn : CAN0_RX0_IRQn);
+    NVIC_ClearPendingIRQ(bus ? CAN1_RX1_IRQn : CAN0_RX1_IRQn);
     NVIC_ClearPendingIRQ(bus ? CAN1_EWMC_IRQn : CAN0_EWMC_IRQn);
     NVIC_EnableIRQ(bus ? CAN1_TX_IRQn : CAN0_TX_IRQn);
     NVIC_EnableIRQ(bus ? CAN1_RX0_IRQn : CAN0_RX0_IRQn);
+    NVIC_EnableIRQ(bus ? CAN1_RX1_IRQn : CAN0_RX1_IRQn);
     NVIC_EnableIRQ(bus ? CAN1_EWMC_IRQn : CAN0_EWMC_IRQn);
 #endif
     return 1;
@@ -124,9 +131,11 @@ void ABoxCanPort_DisableEventIrq(unsigned bus)
 #ifdef ABOX_CAN_EVENTS_ENABLED
     NVIC_DisableIRQ(bus ? CAN1_TX_IRQn : CAN0_TX_IRQn);
     NVIC_DisableIRQ(bus ? CAN1_RX0_IRQn : CAN0_RX0_IRQn);
+    NVIC_DisableIRQ(bus ? CAN1_RX1_IRQn : CAN0_RX1_IRQn);
     NVIC_DisableIRQ(bus ? CAN1_EWMC_IRQn : CAN0_EWMC_IRQn);
     NVIC_ClearPendingIRQ(bus ? CAN1_TX_IRQn : CAN0_TX_IRQn);
     NVIC_ClearPendingIRQ(bus ? CAN1_RX0_IRQn : CAN0_RX0_IRQn);
+    NVIC_ClearPendingIRQ(bus ? CAN1_RX1_IRQn : CAN0_RX1_IRQn);
     NVIC_ClearPendingIRQ(bus ? CAN1_EWMC_IRQn : CAN0_EWMC_IRQn);
 #endif
     bound[bus] = 0;
