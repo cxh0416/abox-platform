@@ -57,6 +57,34 @@ int ABoxBootV2App_Start(const ABoxBootV2AppRequest *r)
 int ABoxBootV2App_TakeInstallReady(void) { return 0; }
 int ABoxBootV2App_TakeFailure(uint32_t *e) { if(e) *e = ABoxBootV2App_LastError(); return 0; }
 int ABoxBootV2_AcknowledgeRollback(void) { return 1; }
+#ifdef LOCKCTRL_OTA_SERVICE_H
+static ABoxEc800Firmware test_firmware=ABOX_EC800_FIRMWARE_A18;
+ABoxEc800Firmware MqttRuntime_ModemFirmware(void) { return test_firmware; }
+int ABoxBootV2_DescriptorRead(ABoxBootV2Descriptor *descriptor)
+{
+    memset(descriptor,0,sizeof(*descriptor));
+#if defined(ABOX_MCU_GD32F105)
+    strcpy(descriptor->product_id,"abox_gd32f105");
+#else
+    strcpy(descriptor->product_id,"abox_stm32f105");
+#endif
+    return 1;
+}
+int ABoxBootV2_StateLoad(ABoxBootV2Record *record) { (void)record;return 0; }
+int ABox_PortFlashRead(uint32_t address,uint8_t *data,uint32_t length)
+{ (void)address;memset(data,0xff,length);return 1; }
+uint8_t OTA_Info_Recover(void) { return 1U; }
+uint8_t OTA_Info_PrepareForOta(void) { return 1U; }
+int ABoxBootV2App_StartWithTransport(const ABoxBootV2AppRequest *request,const char *origin,const char *ca)
+{ (void)origin;(void)ca;return ABoxBootV2App_Start(request); }
+int ABoxEnrollmentEc800Http_Init(ABoxEnrollmentEc800Http *http,ABoxEc800At *at,ABoxEc800Owner owner,
+                                 const char *ca,ABoxEnrollmentHttpDone done,void *user)
+{ memset(http,0,sizeof(*http));http->at=at;http->owner=owner;http->ca_file=ca;http->done=done;http->user=user;return 1; }
+int ABoxEnrollmentEc800Http_SetCaPem(ABoxEnrollmentEc800Http *http,const uint8_t *pem,uint32_t length)
+{ assert(http && pem && length);return 1; }
+void ABoxEnrollmentEc800Http_PrepareCa(ABoxEnrollmentEc800Http *http) { (void)http; }
+void ABoxEnrollmentEc800Http_AfterModemReset(ABoxEnrollmentEc800Http *http) { (void)http; }
+#endif
 
 static void check_disabled(void)
 {
@@ -124,6 +152,13 @@ int main(void)
     OtaService_Init(&at); check_disabled(); assert(app_attempts == 1U);
     app_ok = 1;
     OtaService_Init(&at); assert(OtaService_IsInitialized());
+#ifdef LOCKCTRL_OTA_SERVICE_H
+    assert(OtaService_IsReady());
+    test_firmware=ABOX_EC800_FIRMWARE_A10;assert(!OtaService_IsReady());
+    g_compat_ca.ca_verified=1U;assert(OtaService_IsReady());
+    g_compat_ca.blocked=1U;assert(!OtaService_IsReady());
+    g_compat_ca.blocked=0U;test_firmware=ABOX_EC800_FIRMWARE_A18;
+#endif
 #ifdef SWEEPER_OTA_SERVICE_H
     check_replay_workspace(&at);
 #endif
