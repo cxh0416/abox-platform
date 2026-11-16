@@ -13,3 +13,6 @@ dist/
 !targets/stm32f105_abox_boot/dist/
 !targets/stm32f105_abox_boot/dist/ABox_Boot.bin
 !targets/stm32f105_abox_boot/dist/manifest.json
+!targets/gd32f105_abox_boot/dist/
+!targets/gd32f105_abox_boot/dist/ABox_Boot.bin
+!targets/gd32f105_abox_boot/dist/manifest.json

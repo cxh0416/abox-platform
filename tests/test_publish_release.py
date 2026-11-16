@@ -26,6 +26,49 @@ def artifact(name: str, data: bytes, address: str) -> dict:
 
 
 class ReleaseTest(unittest.TestCase):
+    def test_product_entry_supports_legacy_and_two_variants(self) -> None:
+        shell = shutil.which("pwsh")
+        if not shell:
+            self.skipTest("PowerShell 7 is required for release tooling")
+        tools = self.root / "tools"
+        tools.mkdir()
+        script = tools / "test_release.ps1"
+        script.write_text(
+            "param($Configuration, $AppVersion)\n"
+            "$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path\n"
+            "Copy-Item -LiteralPath (Join-Path $root 'prepared') -Destination (Join-Path $root 'dist') -Recurse\n",
+            encoding="utf-8")
+        for name in ("stm32f105_abox_boot", "gd32f105_abox_boot"):
+            destination = self.root / "platform/targets" / name / "dist"
+            destination.mkdir(parents=True)
+            (destination / "ABox_Boot.bin").write_bytes(self.boot)
+        for name in ("release_contract.json", "release_contract_v1.json"):
+            (tools / name).write_text(json.dumps(self.contract), encoding="utf-8")
+        wrapper = Path(__file__).resolve().parents[1] / "tools/build_product_release.ps1"
+        entry = {"product": "product", "script": "tools/test_release.ps1", "version_parameter": "AppVersion"}
+        entry_path = tools / "release_entry.json"
+        entry_path.write_text(json.dumps(entry), encoding="utf-8")
+        shutil.copytree(self.stage, self.root / "prepared")
+        command = [shell, "-NoProfile", "-File", str(wrapper), "-ProductRoot", str(self.root), "-AppVersion", "product-1.0"]
+        legacy = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(legacy.returncode, 0, legacy.stdout + legacy.stderr)
+        shutil.rmtree(self.root / "dist")
+        shutil.rmtree(self.root / "prepared")
+        entry["variants"] = [
+            {"directory": "v1", "contract": "tools/release_contract_v1.json", "boot": "platform/targets/gd32f105_abox_boot/dist/ABox_Boot.bin"},
+            {"directory": "v2", "contract": "tools/release_contract.json", "boot": "platform/targets/stm32f105_abox_boot/dist/ABox_Boot.bin"},
+        ]
+        entry_path.write_text(json.dumps(entry), encoding="utf-8")
+        for board in ("v1", "v2"):
+            shutil.copytree(self.stage, self.root / "prepared" / board)
+        paired = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(paired.returncode, 0, paired.stdout + paired.stderr)
+        self.assertEqual({p.name for p in (self.root / "dist").iterdir()}, {"v1", "v2"})
+        (self.root / "platform/targets/gd32f105_abox_boot/dist/ABox_Boot.bin").write_bytes(b"bad")
+        blocked = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertNotEqual(blocked.returncode, 0)
+        self.assertIn("Frozen Boot", blocked.stderr)
+
     def test_standard_bundle_primitives(self) -> None:
         shell = shutil.which("pwsh")
         if not shell:

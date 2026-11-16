@@ -1,0 +1,20 @@
+{
+  "manifest_version": 1,
+  "target": "gd32f105_abox_boot",
+  "mcu": "GD32F105RCT6",
+  "hardware_contract": "abox_gd32f105_ec800_v1",
+  "boot_version": "abox-boot-2.3.0-gd",
+  "load_address": "0x08000000",
+  "app_address": "0x08008000",
+  "boot_state_pages": [
+    "0x0803E800",
+    "0x0803F000"
+  ],
+  "config_page": "0x0803F800",
+  "size": 32768,
+  "crc32": "D23F0634",
+  "sha256": "3eb4df8bda5c8a99c338dfe93a289acd43a4b94bf432b5785ec10ea90340f237",
+  "source_commit": "11042dcfc9c55602d9627c73a4c4858cce069902",
+  "configuration": "Release",
+  "toolchain": "arm-none-eabi-gcc (Arm GNU Toolchain 14.2.Rel1 (Build arm-14.52)) 14.2.1 20241119"
+}

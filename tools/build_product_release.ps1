@@ -15,9 +15,26 @@ if ($entry.script -notmatch '^tools/[a-z_]+\.ps1$' -or
     $entry.version_parameter -notmatch '^(AppVersion|FirmwareVersion)$') {
     throw 'Invalid declared product release entry'
 }
-$boot = Join-Path $product 'platform/targets/stm32f105_abox_boot/dist/ABox_Boot.bin'
-if ((Get-FileHash -LiteralPath $boot -Algorithm SHA256).Hash -ne $contract.frozen_boot_sha256) {
-    throw 'Frozen Boot mismatch'
+$variants = @($entry.variants)
+if ($null -eq $entry.variants) {
+    $variants = @([pscustomobject]@{
+        directory = ''; contract = 'tools/release_contract.json'
+        boot = 'platform/targets/stm32f105_abox_boot/dist/ABox_Boot.bin'
+    })
+}
+if ($variants.Count -eq 0) { throw 'No declared release variants' }
+$seen = @{}
+foreach ($variant in $variants) {
+    if (($variant.directory -ne '' -and $variant.directory -notmatch '^[a-zA-Z0-9_-]+$') -or
+        $variant.contract -notmatch '^tools/[a-zA-Z0-9_]+\.json$' -or
+        $variant.boot -notmatch '^platform/targets/[a-zA-Z0-9_]+/dist/ABox_Boot\.bin$' -or
+        $seen.ContainsKey([string]$variant.directory)) { throw 'Invalid release variant declaration' }
+    $seen[[string]$variant.directory] = $true
+    $variantContract = Get-Content -LiteralPath (Join-Path $product $variant.contract) -Raw | ConvertFrom-Json
+    if ($variantContract.product -ne $entry.product -or
+        (Get-FileHash -LiteralPath (Join-Path $product $variant.boot) -Algorithm SHA256).Hash -ne $variantContract.frozen_boot_sha256) {
+        throw "Frozen Boot or product mismatch for $($variant.directory)"
+    }
 }
 # Product packagers retain their manifest ABI and extra gates. They must stage
 # every output and call the common publisher; this entry never writes dist.
@@ -25,6 +42,15 @@ $arguments = @{ Configuration = $Configuration }
 $arguments[$entry.version_parameter] = $AppVersion
 & (Join-Path $product $entry.script) @arguments
 if (-not $?) { throw 'Product release failed' }
-& python (Join-Path $PSScriptRoot 'publish_release.py') --contract $contractPath --stage (Join-Path $product 'dist') --product-root $product --validate-only | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'Published release failed validation' }
+if ($null -ne $entry.variants) {
+    $actual = @(Get-ChildItem -LiteralPath (Join-Path $product 'dist') -Force)
+    if ($actual.Count -ne $variants.Count -or @($actual | Where-Object { -not $_.PSIsContainer -or -not $seen.ContainsKey($_.Name) }).Count) {
+        throw 'Published release root does not match declared variants'
+    }
+}
+foreach ($variant in $variants) {
+    $stage = if ($variant.directory) { Join-Path $product "dist/$($variant.directory)" } else { Join-Path $product 'dist' }
+    & python (Join-Path $PSScriptRoot 'publish_release.py') --contract (Join-Path $product $variant.contract) --stage $stage --product-root $product --validate-only | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Published release failed validation: $($variant.directory)" }
+}
 Write-Host "Formal release completed for $($entry.product): $AppVersion"
