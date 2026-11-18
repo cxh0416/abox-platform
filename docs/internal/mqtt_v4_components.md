@@ -1,6 +1,6 @@
 # MQTT V4 公共组件接入（内部）
 
-内部资料，不作为业务对接协议对外交付。对外字段、大小、类别和时序以[公共 V4 协议](../protocols/A-BOX设备公共MQTT协议-V4.0.md)为准。
+内部资料，不作为业务对接协议对外交付。对外字段、大小、类别和时序以[公共 V4 协议](https://github.com/cxh0416/abox-mqtt-contracts/blob/release/docs/protocols/A-BOX设备公共MQTT协议-V4.0.md)为准。
 
 ## 1. 组件与边界
 

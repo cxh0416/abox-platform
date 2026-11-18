@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
@@ -152,6 +153,11 @@ def normalize_vector(vector):
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--contracts", type=Path, help="compare bundled data to a pinned MQTT contracts checkout")
+    parser.add_argument("profiles", nargs="*", type=Path, help="additional product Registry fixtures")
+    args = parser.parse_args()
+
     repo = Path(__file__).resolve().parents[1]
     vector_path = repo / "docs" / "protocols" / "v4" / "test-vectors.json"
     registry_path = repo / "docs" / "protocols" / "v4" / "registry.json"
@@ -159,7 +165,16 @@ def main() -> int:
     registry = load_registry(registry_path)
 
     failures = validate_registry(registry)
-    for profile_path in sys.argv[1:]:
+    if args.contracts:
+        shared = args.contracts / "docs" / "protocols" / "v4"
+        for bundled, authority in ((vector_path, shared / "test-vectors.json"),
+                                   (registry_path, shared / "core-registry.json")):
+            try:
+                if bundled.read_bytes() != authority.read_bytes():
+                    failures.append(f"{bundled.name}: differs from {authority}")
+            except OSError as exc:
+                failures.append(str(exc))
+    for profile_path in args.profiles:
         try:
             product_registry = load_registry(profile_path)
             failures.extend(f"{profile_path}: {error}" for error in validate_registry(product_registry))

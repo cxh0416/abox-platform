@@ -3,7 +3,7 @@
 > 内部资料，不作为业务对接协议对外交付。
 
 2026-10-15，依据公共 MQTT V4 第 3.2 节和附录 A 接入业务 Number。
-对外合同仍以[公共协议](../protocols/A-BOX设备公共MQTT协议-V4.0.md)为准。
+对外合同仍以[公共协议](https://github.com/cxh0416/abox-mqtt-contracts/blob/release/docs/protocols/A-BOX设备公共MQTT协议-V4.0.md)为准。
 
 ## 接口与边界
 
