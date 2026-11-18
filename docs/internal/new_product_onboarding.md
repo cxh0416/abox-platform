@@ -34,6 +34,8 @@ OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，
 
 已有 `uint64_t` 时间戳和 JSON result 的响应使用 `ABoxCloudResponse_EncodeU64`。直接组装 cJSON 时用 `ABoxMqttV4_FormatInteger` 生成十进制文本，并通过 `cJSON_AddRawToObject` 写入数字时间戳和 `uptimeMs`。平台 CTest 和 V4 产品预检扫描公共及相应产品的生产源码，检查精简 C 库不支持的 64 位 printf 格式及常见的 cJSON 浮点路径。
 
+公共 V4 的 `timestamp` 和 `expiresAt` 沿用冻结向量的安全整数上界。使用正式工具链验证编码器和最终 JSON 的步骤见 [F105 目标库整数序列化回归](../../tests/target_nano/README.md)。
+
 `ABoxBootV2Ec800Adapter_BindServices` 使用同一 AT 和 MQTT bridge，绑定 MQTT 暂停、停止、workspace 借还及客户端。App OTA 继续使用现有 Boot V2 状态机；产品保留版本、artifact/Flash 合同、专用传输缓冲区和安全 callback。暂停、借还与网络恢复必须由通信 owner 执行。
 
 固定故障邮箱、最小 heap/stack 和 Flash 页布局通过产品 linker 与发布合同校验。公共 callback table 使用 const Flash 存储；新服务不得复制产品 payload。`tools/service_stack_budget.json` 声明已知 owner 调用链及保留量，公共构建收集 `.su` 并在发布前检查。静态栈估计不能代替运行时高水位测量。

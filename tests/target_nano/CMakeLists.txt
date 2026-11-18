@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.22)
+project(ABoxNanoSmoke LANGUAGES C)
+add_subdirectory(../.. platform EXCLUDE_FROM_ALL)
+include(../hardware/nano_smoke.cmake)
+add_executable(abox_nano_smoke test_integer_wire.c)
+target_link_libraries(abox_nano_smoke PRIVATE abox::cloud_v4)
+abox_nano_smoke(abox_nano_smoke)

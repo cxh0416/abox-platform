@@ -1,6 +1,8 @@
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME abox_firmware_serialization_check COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/../tools/check_firmware_serialization.py)
+add_test(NAME abox_firmware_serialization_guard_test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_firmware_serialization_guard.py)
 add_executable(abox_usb_otg_test abox_usb_otg_test.c ../hardware/api/src/abox_usb_otg.c)
 target_include_directories(abox_usb_otg_test PRIVATE ../hardware/api/include ../hardware/internal/include)
 add_test(NAME abox_usb_otg_test COMMAND abox_usb_otg_test)
