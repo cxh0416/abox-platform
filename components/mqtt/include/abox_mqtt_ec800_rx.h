@@ -30,6 +30,8 @@ typedef struct {
     uint8_t legacy_json, in_callback;
 } ABoxMqttEc800Rx;
 
+/* Timeout is 1..INT32_MAX ms. Feed/Poll use the same wrapping tick, with
+ * poll intervals below half the tick range. */
 int ABoxMqttEc800Rx_Init(ABoxMqttEc800Rx *rx, uint8_t *header,
                          size_t header_capacity, uint8_t *topic,
                          size_t topic_capacity, uint8_t *payload,

@@ -7,6 +7,15 @@ _Static_assert(sizeof(ABoxAppService) == 16U, "AppService exceeds existing ARM B
 #endif
 static void receive(void *context, const uint8_t *data, uint16_t length)
 { ABoxEc800At_Feed((ABoxEc800At *)context, data, length); }
+static uint32_t refresh_now(const ABoxAppService *service, uint32_t now)
+{
+    const ABoxEc800AtPort *at_port = &service->at->port;
+    if (at_port->tick_ms) {
+        const uint32_t tick = at_port->tick_ms(at_port->context);
+        if ((uint32_t)(tick - now) <= INT32_MAX) return tick;
+    }
+    return now;
+}
 int ABoxAppService_Init(ABoxAppService *service, ABoxEc800At *at,
     ABoxEc800Rx *rx, const ABoxAppServicePort *port)
 {
@@ -28,7 +37,9 @@ void ABoxAppService_Event(ABoxAppService *service, ABoxAppServiceEvent event)
 static int recover(ABoxAppService *service, uint32_t now)
 {
     const ABoxAppServicePort *p = service->port;
-    if (!p->recovery || !ABoxEc800Recovery_Poll(p->recovery, now,
+    if (!p->recovery) return 0;
+    now = refresh_now(service, now);
+    if (!ABoxEc800Recovery_Poll(p->recovery, now,
             service->at->quarantined || p->transport_error(p->context), EC_Power_IsOnDone() &&
             !ABoxBootV2App_IsBusy() && !p->maintenance_busy(p->context))) return 0;
     ABoxAppService_Event(service, ABOX_APP_NETWORK_CHANGED);
@@ -90,7 +101,7 @@ void ABoxAppService_Poll(ABoxAppService *service, uint32_t now)
             if (service->rx_failed) {
                 ABoxEc800Rx_RequestRestart(service->rx);
                 communication_enabled = !p->enabled || p->enabled(p->context);
-                if (p->ready) p->ready(p->context, 0, now);
+                if (p->ready) p->ready(p->context, 0, refresh_now(service, now));
                 goto done;
             }
         }
@@ -99,27 +110,30 @@ void ABoxAppService_Poll(ABoxAppService *service, uint32_t now)
     if (!p->enabled || p->enabled(p->context)) {
         communication_enabled = 1;
         ABoxEc800At_Task(service->at);
-        if (p->after_at) p->after_at(p->context, now);
-        if (p->ota) p->ota(p->context, now);
+        /* RX and earlier callbacks can timestamp events after Poll was called. */
+        if (p->after_at) p->after_at(p->context, refresh_now(service, now));
+        if (p->ota) p->ota(p->context, refresh_now(service, now));
         else ABoxBootV2App_Task();
-        if (p->before_enrollment) p->before_enrollment(p->context, now);
-        if (p->enrollment) p->enrollment(p->context, now);
-        if (p->before_cloud && !p->before_cloud(p->context, now)) goto done;
+        if (p->before_enrollment) p->before_enrollment(p->context, refresh_now(service, now));
+        if (p->enrollment) p->enrollment(p->context, refresh_now(service, now));
+        if (p->before_cloud && !p->before_cloud(p->context, refresh_now(service, now))) goto done;
         if (p->can_connect && !p->can_connect(p->context)) goto done;
-        if (p->transport_first && p->transport) p->transport(p->context, now);
-        if (p->runtime) p->runtime(p->context, now);
+        if (p->transport_first && p->transport) p->transport(p->context, refresh_now(service, now));
+        if (p->runtime) p->runtime(p->context, refresh_now(service, now));
         if (p->runtime_ready && !p->runtime_ready(p->context)) {
-            if (p->ready) p->ready(p->context, 0, now);
+            if (p->ready) p->ready(p->context, 0, refresh_now(service, now));
             goto done;
         }
-        if (!p->transport_first && p->transport) p->transport(p->context, now);
+        if (!p->transport_first && p->transport) p->transport(p->context, refresh_now(service, now));
         if (!p->recovery_after_cloud) {
             recovery_checked = 1;
             if (recover(service, now)) goto done;
         }
-        if (p->ready) p->ready(p->context,
-            p->transport_ready ? p->transport_ready(p->context) : 1, now);
-        p->cloud(p->context, now);
+        if (p->ready) {
+            const int ready = !p->transport_ready || p->transport_ready(p->context);
+            p->ready(p->context, ready, refresh_now(service, now));
+        }
+        p->cloud(p->context, refresh_now(service, now));
     }
 done:
     /* Runtime readiness and enrollment/config gates must not hide physical

@@ -1,4 +1,5 @@
 #include "abox_cloud_response.h"
+#include "abox_mqtt_v4.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -80,4 +81,15 @@ int ABoxCloudResponse_Encode(char *output, size_t capacity,
     return ABoxCloudResponse_EncodeResult(output, capacity, version, timestamp,
         product, request_id, code, message, raw_result,
         (void *)(result_json ? result_json : "{}"));
+}
+
+int ABoxCloudResponse_EncodeU64(char *output, size_t capacity,
+    const char *version, uint64_t timestamp, const char *product,
+    const char *request_id, uint16_t code, const char *message,
+    const char *result_json)
+{
+    char decimal[21];
+    if (!ABoxMqttV4_FormatInteger(decimal, sizeof(decimal), timestamp)) return 0;
+    return ABoxCloudResponse_Encode(output, capacity, version, decimal, product,
+        request_id, code, message, result_json);
 }

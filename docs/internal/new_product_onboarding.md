@@ -16,6 +16,8 @@ OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，
 
 `ABoxAppServicePort` 按产品声明的先后关系轮询 runtime/transport，托管 ready 边沿和模组恢复。`before_cloud` 可暂停连接推进；维护、Enrollment 或 OTA 占用时禁止模组重置。重置前先投递 NETWORK_CHANGED 使旧连接状态和 operation 失效，再重启电源轨。产品回调负责业务安全撤销、配置准入和网络准备。
 
+`ABoxAppService_Poll` 和 AT 的 `tick_ms` 使用同一个可回绕的毫秒时钟。公共入口在 UART 接收和前序工作之后重新取时，再调用带时间参数的回调。产品在单个回调内执行耗时操作后也应重新取时，再用它检查期间产生的事件或推进超时状态机。
+
 ## Cloud 与维护
 
 `ABoxCloudService` 统一 Manifest → Heartbeat → State、响应、sync_state、事件、周期调度及精确 operation/generation 回执。`ABoxCloudServicePort` 在 Flash 中注册报文 provider、transport 和产品完成回调。响应先确认，再发送同 requestId 状态；断连和旧回执不能完成新 operation。产品动态遥测仍由产品提供。
@@ -29,6 +31,8 @@ OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，
 内部包络与响应复用 `ABoxCloudInternalV2`、`ABoxCloudResponse`，产品保留Topic、动作参数和错误映射。`Open` 仍执行既有严格校验；对已有大小写不敏感、数字timestamp和有界requestId兼容路径，`Read` 从已解析root读取借用字段并返回错误阶段，不能借重构收紧旧设备报文准入。`Close` 只用于 `Open` 持有的root，`Read` 不持有root。
 
 响应可通过 `EncodeResult` 回调直接向调用方缓冲区打印result，不需要第二份产品大小的序列化缓冲。现有 `Encode` 的NULL result仍默认为 `{}`；产品既有 `null` 或字段缺省由适配层保持，响应队列、超长回退、回执与副作用时序不由编码器接管。三产品兼容验证与范围见[内部编解码收敛记录](internal_v2_codec_convergence.md)。
+
+已有 `uint64_t` 时间戳和 JSON result 的响应使用 `ABoxCloudResponse_EncodeU64`。直接组装 cJSON 时用 `ABoxMqttV4_FormatInteger` 生成十进制文本，并通过 `cJSON_AddRawToObject` 写入数字时间戳和 `uptimeMs`。平台 CTest 和 V4 产品预检扫描公共及相应产品的生产源码，检查精简 C 库不支持的 64 位 printf 格式及常见的 cJSON 浮点路径。
 
 `ABoxBootV2Ec800Adapter_BindServices` 使用同一 AT 和 MQTT bridge，绑定 MQTT 暂停、停止、workspace 借还及客户端。App OTA 继续使用现有 Boot V2 状态机；产品保留版本、artifact/Flash 合同、专用传输缓冲区和安全 callback。暂停、借还与网络恢复必须由通信 owner 执行。
 

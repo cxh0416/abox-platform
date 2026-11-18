@@ -11,6 +11,11 @@ int ABoxCloudResponse_Encode(char *output, size_t capacity,
     const char *version, const char *timestamp, const char *product,
     const char *request_id, uint16_t code, const char *message,
     const char *result_json);
+/* Same envelope as Encode, with an exact decimal JSON number for timestamp. */
+int ABoxCloudResponse_EncodeU64(char *output, size_t capacity,
+    const char *version, uint64_t timestamp, const char *product,
+    const char *request_id, uint16_t code, const char *message,
+    const char *result_json);
 /* Encode the same envelope directly into caller storage. A callback writes
  * one complete JSON result, avoiding a second product-sized buffer. NULL
  * omits result for existing compact error responses; Encode still defaults

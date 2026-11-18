@@ -12,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $platform = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $productPath = (Resolve-Path -LiteralPath $ProductRoot).Path
 $servicePath = (Resolve-Path -LiteralPath $ServiceRoot).Path
+& python (Join-Path $PSScriptRoot 'check_firmware_serialization.py') --product-root $productPath
+if ($LASTEXITCODE -ne 0) { throw 'Firmware integer serialization check failed' }
 foreach ($source in @($platform, (Join-Path $productPath 'tests'))) {
     $build = if ($source -eq $platform) { Join-Path $platform 'build/host' } else { Join-Path $productPath 'build/host' }
     & cmake -S $source -B $build -G Ninja "-DCMAKE_C_COMPILER=$Compiler" '-DBUILD_TESTING=ON' '-DCMAKE_BUILD_TYPE=Debug'

@@ -52,6 +52,8 @@ typedef struct {
 } ABoxAppService;
 int ABoxAppService_Init(ABoxAppService *service, ABoxEc800At *at,
     ABoxEc800Rx *rx, const ABoxAppServicePort *port);
+/* Use the same wrapping millisecond clock as at->port.tick_ms. The owner
+ * refreshes it before timed callbacks after RX and other work. */
 void ABoxAppService_Poll(ABoxAppService *service, uint32_t now);
 void ABoxAppService_Event(ABoxAppService *service, ABoxAppServiceEvent event);
 #ifdef __cplusplus

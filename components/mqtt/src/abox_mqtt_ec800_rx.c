@@ -31,7 +31,7 @@ int ABoxMqttEc800Rx_Init(ABoxMqttEc800Rx *rx, uint8_t *header,
 {
     if (!rx || !header || header_capacity < sizeof(prefix) + 8U ||
         !topic || !topic_capacity || !payload || !payload_capacity ||
-        !timeout_ms || !message || legacy_json > 1U) return 0;
+        !timeout_ms || timeout_ms > INT32_MAX || !message || legacy_json > 1U) return 0;
     memset(rx, 0, sizeof(*rx));
     rx->header = header; rx->header_capacity = header_capacity;
     rx->topic = topic; rx->topic_capacity = topic_capacity;
@@ -106,10 +106,13 @@ static int append_payload(ABoxMqttEc800Rx *rx, uint8_t c)
 
 void ABoxMqttEc800Rx_Poll(ABoxMqttEc800Rx *rx, uint32_t now_ms)
 {
+    uint32_t elapsed;
     if (!rx || rx->in_callback) return;
+    elapsed = now_ms - rx->last_byte_ms;
+    /* A poll sampled before the last byte is behind it in modular tick order. */
     if ((rx->state != RX_SEARCH || rx->prefix_length) &&
         rx->state != RX_LOCKED &&
-        (uint32_t)(now_ms - rx->last_byte_ms) >= rx->timeout_ms) {
+        elapsed <= INT32_MAX && elapsed >= rx->timeout_ms) {
         ++rx->counters.expired;
         ++rx->counters.rejected;
         if (rx->state == RX_SEARCH) ABoxMqttEc800Rx_Reset(rx);

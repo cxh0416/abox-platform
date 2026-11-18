@@ -37,6 +37,9 @@ int main(void)
     uint8_t header[96], topic[32], payload[64];
     Fixture f = {0};
     ABoxMqttEc800Rx rx;
+    assert(!ABoxMqttEc800Rx_Init(&rx, header, sizeof(header), topic,
+                                 sizeof(topic), payload, sizeof(payload),
+                                 (uint32_t)INT32_MAX + 1U, 1U, message, &f));
     assert(ABoxMqttEc800Rx_Init(&rx, header, sizeof(header), topic,
                                 sizeof(topic), payload, sizeof(payload),
                                 1000U, 1U, message, &f));
@@ -97,5 +100,25 @@ int main(void)
     feed(&rx, "+QMTRECV: 0,0,\"topic/raw\",7,\"{\"a\":1}\"\r\n", 2001U);
     assert(f.count == 2U && f.payload_length == 7U);
     assert(memcmp(f.payload, "{\"a\":1}", 7U) == 0);
+
+    /* The owner may have sampled its poll time before draining the UART. */
+    feed(&rx, "+QMTRECV: 0,0,\"topic/split\",5,he", 2101U);
+    ABoxMqttEc800Rx_Poll(&rx, 2100U);
+    assert(ABoxMqttEc800Rx_IsCollecting(&rx));
+    assert(!ABoxMqttEc800Rx_IsLocked(&rx) && rx.counters.expired == 0U);
+    feed(&rx, "llo\r\n", 2102U);
+    assert(f.count == 3U && f.payload_length == 5U && memcmp(f.payload, "hello", 5U) == 0);
+
+    feed(&rx, "+QMTRECV: 0,0,\"topic/wrap\",5,he", 0U);
+    ABoxMqttEc800Rx_Poll(&rx, UINT32_MAX);
+    assert(!ABoxMqttEc800Rx_IsLocked(&rx) && rx.counters.expired == 0U);
+    feed(&rx, "llo\r\n", 1U);
+    assert(f.count == 4U && f.payload_length == 5U && memcmp(f.payload, "hello", 5U) == 0);
+
+    feed(&rx, "+QMTRECV: 0,0,\"topic/wrap\",5,he", UINT32_MAX - 499U);
+    ABoxMqttEc800Rx_Poll(&rx, 499U); /* 999 ms after the last byte. */
+    assert(!ABoxMqttEc800Rx_IsLocked(&rx) && rx.counters.expired == 0U);
+    ABoxMqttEc800Rx_Poll(&rx, 500U);
+    assert(ABoxMqttEc800Rx_IsLocked(&rx) && rx.counters.expired == 1U);
     return 0;
 }

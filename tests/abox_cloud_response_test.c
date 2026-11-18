@@ -36,5 +36,11 @@ int main(void)
         0, "r", 200U, "ok", result, "null") && !tiny[0]);
     assert(!ABoxCloudResponse_EncodeResult(output, sizeof(output), "2.0", "0",
         0, "r", 200U, "ok", unterminated, 0) && !output[0]);
+    assert(ABoxCloudResponse_EncodeU64(output, sizeof(output), "2.0", UINT64_MAX,
+        "product", "r", 200U, "ok", NULL));
+    assert(strcmp(output, "{\"version\":\"2.0\",\"timestamp\":18446744073709551615,"
+        "\"data\":{\"product\":\"product\",\"requestId\":\"r\",\"code\":200,\"msg\":\"ok\",\"result\":{}}}") == 0);
+    assert(!ABoxCloudResponse_EncodeU64(tiny, sizeof(tiny), "2.0", 0U,
+        NULL, "r", 200U, "ok", NULL) && !tiny[0]);
     return 0;
 }
