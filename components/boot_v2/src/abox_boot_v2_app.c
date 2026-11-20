@@ -1,4 +1,5 @@
 #include "abox_boot_v2_app.h"
+#include "abox_boot_v2_nor.h"
 #include "abox_platform_port.h"
 
 #include <stdio.h>
@@ -33,6 +34,9 @@ typedef enum {
     ST_VERIFY_READ,
     ST_VERIFY_CLOSE,
     ST_VERIFY,
+    ST_NOR_ERASE,
+    ST_NOR_COPY,
+    ST_NOR_VERIFY,
     ST_RETRY,
     ST_ERROR
 } State;
@@ -81,6 +85,7 @@ typedef struct {
     ABoxHttpsUfsDoneFn downloader_done;
     void *downloader_done_user;
     uint8_t direct_supported;
+    ABoxBootV2NorWriter nor_writer;
 } Context;
 
 /* Product linker scripts place this reset-scratch context after the fixed
@@ -115,7 +120,21 @@ static void provision_fail(uint32_t error);
 
 static const char *slot_name(uint8_t slot)
 {
+    if (g.cfg.nor) return "fw_nor_stage.bin";
     return slot ? "fw_slot1.bin" : "fw_slot0.bin";
+}
+
+static int boot_matches_medium(void)
+{
+    ABoxBootV2Descriptor descriptor;
+    return ABoxBootV2_DescriptorRead(&descriptor) && ABoxBootV2_DescriptorReadyFor(
+        &descriptor, g.cfg.nor ? ABOX_BOOT_V2_FEATURE_NOR_AB : ABOX_BOOT_V2_FEATURE_UFS_AB);
+}
+
+static int nor_stable_matches(const ABoxBootV2Record *record)
+{
+    return ABoxBootV2Nor_Matches(g.cfg.nor, record->stable_slot,
+        record->stable_image_size, record->stable_image_crc32);
 }
 
 static uint32_t now(void)
@@ -154,7 +173,9 @@ static int valid_config(const ABoxBootV2AppConfig *config)
            config->running_version && config->running_version[0] &&
            strlen(config->running_version) < ABOX_BOOT_V2_APP_VERSION_SIZE &&
            config->ca_pem && config->ca_pem_length &&
-           config->app_size && config->app_size <= config->app_max_size;
+           config->app_size && config->app_size <= config->app_max_size &&
+           (!config->nor || (config->nor->ready && config->app_size >= 8U &&
+                             config->app_max_size <= ABOX_BOOT_V2_NOR_PAYLOAD_MAX));
 }
 
 static int provision_state(State state)
@@ -191,6 +212,9 @@ static const char *download_stage(void)
     case ST_VERIFY_READ: return "VERIFY_READ";
     case ST_VERIFY_CLOSE: return "VERIFY_CLOSE";
     case ST_VERIFY: return "VERIFY";
+    case ST_NOR_ERASE: return "NOR_ERASE";
+    case ST_NOR_COPY: return "NOR_COPY";
+    case ST_NOR_VERIFY: return "NOR_VERIFY";
     default: return "UNKNOWN";
     }
 }
@@ -447,6 +471,11 @@ static int begin_local_seed(void)
     }
     g.seeding = 1U;
     g.slot = 0U;
+    if (g.cfg.nor) {
+        ABoxBootV2Record previous;
+        if (ABoxBootV2_StateLoad(&previous) && previous.stable_image_size && previous.stable_slot == 0U)
+            g.slot = 1U;
+    }
     g.expected_size = g.cfg.app_size;
     if (!running_image_crc(&g.expected_crc)) {
         g.last_error = ABOX_BOOT_V2_APP_ERROR_STATE;
@@ -488,6 +517,11 @@ static int begin_request(const ABoxBootV2AppRequest *request, uint8_t seeding,
     ABoxBootV2Record state;
     char expected[ABOX_BOOT_V2_APP_URL_SIZE];
     int length;
+
+    if (g.cfg.nor && !ABoxBootV2App_IsReady()) {
+        g.last_error = ABOX_BOOT_V2_APP_ERROR_STATE;
+        return 0;
+    }
 
     if (!request || !g.provisioned || g.busy || request->size == 0U ||
         request->size > g.cfg.app_max_size || strlen(request->version) == 0U ||
@@ -648,6 +682,17 @@ static void provision_succeeded(void)
     }
 }
 
+static void begin_nor_stage(void)
+{
+    if (!ABoxBootV2NorWriter_Init(&g.nor_writer, g.cfg.nor, g.slot, g.expected_size, g.expected_crc)) {
+        download_fail(ABOX_BOOT_V2_APP_ERROR_NOR);
+        return;
+    }
+    g.downloaded = 0U;
+    g.read_size = 0U;
+    g.state = ST_NOR_ERASE;
+}
+
 static void seed_succeeded(void)
 {
     char command[128];
@@ -659,7 +704,9 @@ static void seed_succeeded(void)
         (void)submit_command(command, 10000U);
         break;
     case ST_MQTT_CLOSE:
-        if (g.seeding) {
+        if (g.seeding && g.cfg.nor) {
+            begin_nor_stage();
+        } else if (g.seeding) {
             g.state = ST_FILE_DELETE;
             (void)snprintf(command, sizeof(command), "AT+QFDEL=\"%s\"",
                            slot_name(g.slot));
@@ -732,7 +779,8 @@ static void verify_succeeded(void)
             download_fail(ABOX_BOOT_V2_APP_ERROR_SIZE);
         else {
             g.state = ST_VERIFY_OPEN;
-            (void)snprintf(command, sizeof(command), "AT+QFOPEN=\"%s\",0", slot_name(g.slot));
+            (void)snprintf(command, sizeof(command), "AT+QFOPEN=\"%s\",%u",
+                           slot_name(g.slot), g.cfg.nor ? 2U : 0U);
             (void)submit_command(command, 5000U);
         }
         break;
@@ -743,7 +791,12 @@ static void verify_succeeded(void)
             g.state = ST_VERIFY_READ;
         break;
     case ST_VERIFY_READ:
-        if (g.read_size == g.expected_size) {
+        if (g.cfg.nor) {
+            if (g.read_size - g.downloaded != g.chunk_size)
+                download_fail(ABOX_BOOT_V2_APP_ERROR_UFS);
+            else
+                g.state = ST_NOR_COPY;
+        } else if (g.read_size == g.expected_size) {
             g.state = ST_VERIFY_CLOSE;
             (void)snprintf(command, sizeof(command), "AT+QFCLOSE=%lu",
                            (unsigned long)g.handle);
@@ -752,7 +805,7 @@ static void verify_succeeded(void)
         break;
     case ST_VERIFY_CLOSE:
         g.handle_valid = 0U;
-        g.state = ST_VERIFY;
+        g.state = g.cfg.nor ? ST_NOR_VERIFY : ST_VERIFY;
         break;
     default: break;
     }
@@ -857,6 +910,16 @@ static void event_received(ABoxBootV2AtEvent event, const uint8_t *data,
             uint16_t copy = length;
             if (g.read_size + length > g.expected_size) {
                 download_fail(ABOX_BOOT_V2_APP_ERROR_SIZE);
+                return;
+            }
+            if (g.cfg.nor) {
+                uint32_t received = g.read_size - g.downloaded;
+                if (received + length > g.chunk_size) {
+                    download_fail(ABOX_BOOT_V2_APP_ERROR_SIZE);
+                    return;
+                }
+                memcpy(g.port.transfer_buffer + received, data, length);
+                g.read_size += length;
                 return;
             }
             if (g.vector_len < sizeof(g.vector)) {
@@ -1014,6 +1077,7 @@ static int stable_slot_needs_seed(void)
     if (!ABoxBootV2_StateLoad(&state)) return 1;
     if (state.state != ABOX_BOOT_V2_CONFIRMED && state.state != ABOX_BOOT_V2_NORMAL)
         return 0;
+    if (g.cfg.nor && !nor_stable_matches(&state)) return 1;
     if (!running_image_crc(&running_crc)) return 1;
     return state.stable_image_size != g.cfg.app_size ||
            state.stable_image_crc32 != running_crc ||
@@ -1035,6 +1099,12 @@ static void commit_verified_candidate(void)
     const uint8_t was_seeding = g.seeding;
     memset(&state, 0, sizeof(state));
     (void)ABoxBootV2_StateLoad(&state);
+    if (g.cfg.nor && (!boot_matches_medium() ||
+        (state.state != ABOX_BOOT_V2_NORMAL && state.state != ABOX_BOOT_V2_CONFIRMED) ||
+        (!was_seeding && (state.stable_slot == g.slot || !nor_stable_matches(&state))))) {
+        download_fail(ABOX_BOOT_V2_APP_ERROR_STATE);
+        return;
+    }
     state.candidate_slot = g.slot;
     state.image_size = g.expected_size;
     state.image_crc32 = g.expected_crc;
@@ -1062,6 +1132,59 @@ static void commit_verified_candidate(void)
     resume_mqtt();
     log_message(1U, was_seeding ? "Boot V2 stable slot seeded"
                                  : "Boot V2 candidate verified");
+}
+
+static void nor_task(void)
+{
+    char command[64];
+    ABoxNorResult result;
+    switch (g.state) {
+    case ST_NOR_ERASE:
+        result = ABoxBootV2NorWriter_EraseTask(&g.nor_writer);
+        if (result == ABOX_NOR_OK) {
+            if (g.seeding) {
+                g.state = ST_NOR_COPY;
+            } else {
+                g.state = ST_FILE_LIST;
+                (void)snprintf(command, sizeof(command), "AT+QFLST=\"%s\"", slot_name(g.slot));
+                (void)submit_command(command, 5000U);
+            }
+        }
+        break;
+    case ST_NOR_COPY: {
+        uint32_t offset = g.nor_writer.offset;
+        uint32_t remaining = (g.seeding ? g.expected_size : g.read_size) - offset;
+        uint32_t length = ABOX_NOR_PAGE_SIZE - offset % ABOX_NOR_PAGE_SIZE;
+        if (length > remaining) length = remaining;
+        const uint8_t *source = g.port.transfer_buffer + (g.seeding ? 0U : offset - g.downloaded);
+        if (g.seeding && !ABox_PortFlashRead(g.cfg.app_start_addr + offset,
+                g.port.transfer_buffer, length)) {
+            download_fail(ABOX_BOOT_V2_APP_ERROR_STATE);
+            return;
+        }
+        result = ABoxBootV2NorWriter_Append(&g.nor_writer, source, length);
+        if (result != ABOX_NOR_OK || length != remaining) break;
+        g.downloaded = g.nor_writer.offset;
+        if (g.seeding) {
+            g.state = ST_NOR_VERIFY;
+        } else if (g.downloaded == g.expected_size) {
+            g.state = ST_VERIFY_CLOSE;
+            (void)snprintf(command, sizeof(command), "AT+QFCLOSE=%lu", (unsigned long)g.handle);
+            (void)submit_command(command, 5000U);
+        } else {
+            g.state = ST_VERIFY_READ;
+        }
+        break;
+    }
+    case ST_NOR_VERIFY:
+        result = ABoxBootV2NorWriter_VerifyTask(&g.nor_writer, g.port.transfer_buffer,
+                                              ABOX_BOOT_V2_APP_RAW_CHUNK);
+        if (result == ABOX_NOR_OK) commit_verified_candidate();
+        break;
+    default:
+        return;
+    }
+    if (result == ABOX_NOR_ERROR) download_fail(ABOX_BOOT_V2_APP_ERROR_NOR);
 }
 
 void ABoxBootV2App_Task(void)
@@ -1098,15 +1221,22 @@ void ABoxBootV2App_Task(void)
 
     if (g.state == ST_DOWNLOADER) {
         ABoxHttpsUfs_Task(&g.downloader);
-        if (ABoxHttpsUfs_TakeSuccess(&g.downloader))
-            commit_verified_candidate();
-        else if (ABoxHttpsUfs_TakeFailure(&g.downloader, &downloader_error))
+        if (ABoxHttpsUfs_TakeSuccess(&g.downloader)) {
+            if (g.cfg.nor) begin_nor_stage();
+            else commit_verified_candidate();
+        } else if (ABoxHttpsUfs_TakeFailure(&g.downloader, &downloader_error))
             download_fail(downloader_error);
+        return;
+    }
+
+    if (g.state >= ST_NOR_ERASE && g.state <= ST_NOR_VERIFY) {
+        nor_task();
         return;
     }
 
     if (g.provisioned && !g.busy && !g.seed_attempted && !g.stable_checked &&
         (!g.port.may_start_seed || g.port.may_start_seed(g.port.context)) &&
+        (!g.cfg.nor || (boot_matches_medium() && ABoxNor_Status(g.cfg.nor) == ABOX_NOR_OK)) &&
         stable_slot_check_eligible()) {
         g.stable_checked = 1U;
         if (stable_slot_needs_seed()) {
@@ -1146,6 +1276,7 @@ void ABoxBootV2App_Task(void)
     case ST_VERIFY_READ: {
         uint32_t length = g.expected_size - g.read_size;
         if (length > ABOX_BOOT_V2_APP_RAW_CHUNK) length = ABOX_BOOT_V2_APP_RAW_CHUNK;
+        g.chunk_size = length;
         (void)snprintf(command, sizeof(command), "AT+QFREAD=%lu,%lu",
                        (unsigned long)g.handle, (unsigned long)length);
         (void)submit_command(command, 10000U);
@@ -1176,10 +1307,9 @@ int ABoxBootV2App_IsProvisioned(void)
 int ABoxBootV2App_IsReady(void)
 {
     ABoxBootV2Record state;
-    ABoxBootV2Descriptor descriptor;
-    return g_initialized && g.provisioned && ABoxBootV2_DescriptorRead(&descriptor) &&
-           ABoxBootV2_DescriptorReady(&descriptor) && ABoxBootV2_StateLoad(&state) &&
-           state.stable_slot <= 1U && state.stable_image_size != 0U;
+    return g_initialized && g.provisioned && boot_matches_medium() && ABoxBootV2_StateLoad(&state) &&
+           state.stable_slot <= 1U && state.stable_image_size != 0U &&
+           (!g.cfg.nor || nor_stable_matches(&state));
 }
 
 int ABoxBootV2App_IsBusy(void)
@@ -1207,6 +1337,7 @@ const char *ABoxBootV2App_Phase(void)
     if (g.state == ST_DOWNLOADER) return ABoxHttpsUfs_Phase(&g.downloader);
     if (g.state >= ST_MQTT_DISC && g.state <= ST_FILE_CLOSE) return "DOWNLOADING";
     if (g.state >= ST_FILE_LIST && g.state <= ST_VERIFY) return "VERIFYING";
+    if (g.state >= ST_NOR_ERASE && g.state <= ST_NOR_VERIFY) return download_stage();
     if (g.state == ST_ERROR) return "ERROR";
     return "IDLE";
 }

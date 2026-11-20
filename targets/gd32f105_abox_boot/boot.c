@@ -7,7 +7,13 @@
 #include "abox_boot_v2_installer.h"
 #include "abox_gd32f105_flash.h"
 #include "abox_platform_port.h"
+#ifdef ABOX_GD_BOOT_NOR_AB
+#include "abox_board_io.h"
+#include "abox_board_v3_nor.h"
+#include "abox_boot_v2_nor.h"
+#else
 #include "ufs_at.h"
+#endif
 #include "boot_version.h"
 
 #define APP_START 0x08008000U
@@ -72,6 +78,14 @@ static int boot_clock_stop(void)
     return 1;
 }
 
+#ifdef ABOX_GD_BOOT_NOR_AB
+static ABoxNor nor;
+static ABoxBootV2NorReader nor_reader = {.nor = &nor};
+
+/* The NOR Boot does not power or drive the modem, and has no serial logger. */
+static int uart_write(void *ctx, const uint8_t *data, uint32_t length)
+{ (void)ctx; (void)data; (void)length; return 0; }
+#else
 static int uart_write(void *ctx, const uint8_t *data, uint32_t length)
 {
     uint32_t start = ticks;
@@ -128,6 +142,8 @@ static void uart_drain_startup(void)
     }
 }
 
+#endif
+
 static int flash_read(void *ctx, uint32_t address, uint8_t *data, uint32_t length)
 { (void)ctx; memcpy(data, (const void *)(uintptr_t)address, length); return 1; }
 static int flash_write_word(void *ctx, uint32_t address, const uint8_t word[4])
@@ -135,7 +151,12 @@ static int flash_write_word(void *ctx, uint32_t address, const uint8_t word[4])
 static int vector_valid(void *ctx, const uint8_t vector[8])
 { (void)ctx; return ABoxBootV2_ImageVectorValid(vector); }
 static const ABoxBootV2Installer installer = {
-    0, ABoxGdBootUfs_Open, ABoxGdBootUfs_Read, ABoxGdBootUfs_Close, ABoxGd32Flash_Begin, ABoxGd32Flash_ErasePage,
+#ifdef ABOX_GD_BOOT_NOR_AB
+    &nor_reader, ABoxBootV2NorReader_Open, ABoxBootV2NorReader_Read, ABoxBootV2NorReader_Close,
+#else
+    0, ABoxGdBootUfs_Open, ABoxGdBootUfs_Read, ABoxGdBootUfs_Close,
+#endif
+    ABoxGd32Flash_Begin, ABoxGd32Flash_ErasePage,
     flash_write_word, flash_read, ABoxGd32Flash_End, vector_valid,
     APP_START, APP_END, PAGE_SIZE, image_buffer, sizeof(image_buffer)
 };
@@ -148,7 +169,14 @@ static uint8_t flash_valid(void *ctx, uint32_t size, uint32_t crc)
 }
 static uint8_t app_valid(void *ctx) { return (uint8_t)vector_valid(ctx, (const uint8_t *)APP_START); }
 static ABoxBootV2InstallResult install(void *ctx, uint8_t slot, uint32_t size, uint32_t crc)
-{ (void)ctx; return ABoxBootV2_Install(&installer, slot, size, crc); }
+{
+    (void)ctx;
+#ifdef ABOX_GD_BOOT_NOR_AB
+    nor_reader.size = size;
+    nor_reader.crc = crc;
+#endif
+    return ABoxBootV2_Install(&installer, slot, size, crc);
+}
 static uint8_t reset_cause(void *ctx) { (void)ctx; return reset_reason; }
 static void boot_delay(void *ctx, uint32_t ms) { (void)ctx; delay(ms); }
 static void jump(void *ctx)
@@ -158,7 +186,9 @@ static void jump(void *ctx)
     __disable_irq(); SysTick->CTRL = 0U; SysTick->LOAD = 0U; SysTick->VAL = 0U;
     SCB->ICSR = SCB_ICSR_PENDSTCLR_Msk | SCB_ICSR_PENDSVCLR_Msk;
     for (unsigned i = 0; i < 8U; ++i) { NVIC->ICER[i] = 0xFFFFFFFFU; NVIC->ICPR[i] = 0xFFFFFFFFU; }
+#ifndef ABOX_GD_BOOT_NOR_AB
     usart_deinit(USART0); usart_deinit(UART4);
+#endif
     if (!boot_clock_stop()) for (;;) {}
     SCB->VTOR = APP_START; __DSB(); __ISB();
     __asm volatile("msr msp, %0\n bx %1" :: "r"(sp), "r"(pc) : "memory");
@@ -174,11 +204,28 @@ int main(void)
         .flash_begin = ABoxGd32Flash_Begin, .flash_write = ABoxGd32Flash_Write,
         .flash_erase_page = ABoxGd32Flash_ErasePage, .flash_end = ABoxGd32Flash_End,
         .enter_critical = critical_enter, .exit_critical = critical_leave, .flash_layout = &flash_layout };
-    static const ABoxBootV2BootPort boot = { 0, flash_valid, install, app_valid, jump, reset_cause, boot_delay, boot_log };
+    static const ABoxBootV2BootPort boot = {
+        0, flash_valid, install, app_valid, jump, reset_cause, boot_delay,
+#ifdef ABOX_GD_BOOT_NOR_AB
+        NULL
+#else
+        boot_log
+#endif
+    };
     reset_reason = rcu_flag_get(RCU_FLAG_FWDGTRST) ? 3U : 0U;
     rcu_all_reset_flag_clear();
     if (!boot_clock_start() || SysTick_Config(36000U)) for (;;) {}
     __enable_irq();
+#ifdef ABOX_GD_BOOT_NOR_AB
+    rcu_periph_clock_enable(RCU_GPIOC);
+    gpio_bit_reset(GPIOC, GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9);
+    gpio_init(GPIOC, GPIO_MODE_OUT_PP, GPIO_OSPEED_2MHZ, GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9);
+    const ABoxBoardIoPort *board = ABoxBoardIo_HardwarePort();
+    if (!board->prepare(board->context)) for (;;) {}
+    /* A missing NOR still allows an intact installed App to boot. The
+     * NOR reader reports pre-erase failure for an unverified candidate. */
+    (void)ABoxBoardV3_NorOpen(&nor, tick, NULL);
+#else
     rcu_periph_clock_enable(RCU_GPIOA); rcu_periph_clock_enable(RCU_GPIOC);
     rcu_periph_clock_enable(RCU_USART0); rcu_periph_clock_enable(RCU_UART4);
     gpio_init(GPIOA, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, 1U << 9);
@@ -193,7 +240,9 @@ int main(void)
     usart_stop_bit_set(UART4, USART_STB_1BIT); usart_parity_config(UART4, USART_PM_NONE);
     usart_transmit_config(UART4, USART_TRANSMIT_ENABLE); usart_enable(UART4);
     boot_log(0, "[BOOT2] evt=BOOT_START version=" ABOX_GD_BOOT_VERSION "\r\n");
+#endif
     if (!ABox_PlatformPortBind(&port) || !ABoxBootV2_StateBindLayout(&layout) || !ABoxBootV2Boot_Init(&boot)) for (;;) {}
+#ifndef ABOX_GD_BOOT_NOR_AB
     delay(1000U); gpio_bit_set(GPIOC, 1U << 7); delay(1000U); gpio_bit_set(GPIOC, 1U << 8);
     delay(2000U); gpio_bit_reset(GPIOC, 1U << 8); delay(2500U);
     uart_drain_startup();
@@ -283,6 +332,7 @@ int main(void)
     }
 #else
     (void)ufs_ready;
+#endif
 #endif
     for (;;) ABoxBootV2Boot_Task();
 }

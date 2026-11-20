@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "abox_boot_v2.h"
+
 #include "abox_https_ufs_downloader.h"
 
 #ifdef __cplusplus
@@ -20,6 +21,7 @@ extern "C" {
 #define ABOX_BOOT_V2_APP_ERROR_SIZE 1301U
 #define ABOX_BOOT_V2_APP_ERROR_CRC 1302U
 #define ABOX_BOOT_V2_APP_ERROR_VECTOR 1303U
+#define ABOX_BOOT_V2_APP_ERROR_NOR 1304U
 #define ABOX_BOOT_V2_APP_ERROR_STATE 1401U
 #define ABOX_BOOT_V2_APP_ERROR_URL 1402U
 #define ABOX_BOOT_V2_STABLE_SEED_SOURCE "local_flash"
@@ -64,6 +66,8 @@ typedef struct {
     int (*may_start_seed)(void *context);
 } ABoxBootV2AppPort;
 
+struct ABoxNor;
+
 typedef struct {
     const char *ota_origin;
     const char *revision_product;
@@ -75,6 +79,8 @@ typedef struct {
     uint32_t app_start_addr;
     uint32_t app_size;
     uint32_t app_max_size;
+    /* Optional V3 slot medium. EC800 UFS is still the HTTPS download spool. */
+    struct ABoxNor *nor;
 } ABoxBootV2AppConfig;
 
 /* Startup/idle initialization only; callers must quiesce an active session

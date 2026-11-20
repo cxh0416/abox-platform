@@ -22,6 +22,20 @@ typedef struct {
     int (*poll)(void *);
     int (*loaded)(void *); /* Both startup copies have been inspected/recovered. */
 } ABoxMqttIdemPort;
+typedef enum { ABOX_IDEM_NEW, ABOX_IDEM_WAIT, ABOX_IDEM_REPLAY,
+    ABOX_IDEM_CONFLICT, ABOX_IDEM_UNCERTAIN, ABOX_IDEM_UNAVAILABLE } ABoxMqttIdemMatch;
+/* Per-record storage adapter. Handles are opaque to product code. */
+typedef struct {
+    ABoxMqttIdemMatch (*find)(void *, const char *, const uint8_t *, size_t *);
+    uint16_t (*begin)(void *, const char *, const uint8_t *, uint64_t, const ABoxClockSnapshot *, size_t *);
+    void (*poll)(void *);
+    uint16_t (*take)(void *, size_t, const ABoxClockSnapshot *);
+    int (*complete)(void *, size_t, const char *, size_t);
+    const char *(*response)(void *, size_t, size_t *);
+    void (*invalidate)(void *);
+    ABoxMqttIdemState (*state)(void *, size_t);
+} ABoxMqttIdemBackend;
+
 typedef struct {
     ABoxMqttIdemEntry *entries;
     uint8_t *responses;
@@ -29,9 +43,9 @@ typedef struct {
     const char *device_id;
     ABoxMqttIdemPort port;
     uint8_t ready, failed, committing;
+    const ABoxMqttIdemBackend *backend;
+    void *backend_context;
 } ABoxMqttIdempotency;
-typedef enum { ABOX_IDEM_NEW, ABOX_IDEM_WAIT, ABOX_IDEM_REPLAY,
-    ABOX_IDEM_CONFLICT, ABOX_IDEM_UNCERTAIN, ABOX_IDEM_UNAVAILABLE } ABoxMqttIdemMatch;
 int ABoxMqttIdem_Init(ABoxMqttIdempotency *cache, const char *device_id,
     ABoxMqttIdemEntry *entries, size_t count, uint8_t *responses,
     size_t response_capacity, const ABoxMqttIdemPort *port);
@@ -58,4 +72,7 @@ const char *ABoxMqttIdem_Response(const ABoxMqttIdempotency *cache, size_t index
 /* Called on uncertain storage/reset before reloading. Completed RAM responses
  * remain replayable, but no new action or dispatch is allowed. */
 void ABoxMqttIdem_Invalidate(ABoxMqttIdempotency *cache);
+/* Inspect a handle returned by Begin or Find. Copy any borrowed response
+ * before the next cache operation. */
+ABoxMqttIdemState ABoxMqttIdem_State(const ABoxMqttIdempotency *cache, size_t index);
 #endif

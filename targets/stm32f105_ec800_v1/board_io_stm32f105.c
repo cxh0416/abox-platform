@@ -8,7 +8,7 @@ typedef struct {
     uint16_t pin;
 } BoardPin;
 
-static const BoardPin outputs[ABOX_BOARD_IO_OUTPUT_COUNT] = {
+static const BoardPin outputs[(ABOX_BOARD_IO_RELAY + 1U)] = {
     {GPIOA, GPIO_PIN_0}, {GPIOA, GPIO_PIN_1}, {GPIOA, GPIO_PIN_2}, {GPIOC, GPIO_PIN_4}
 };
 #if ABOX_BOARD_VERSION == ABOX_BOARD_VERSION_V1
@@ -105,7 +105,7 @@ static int prepare_leds(void *context, uint8_t led_mask)
 static int write_output(void *context, ABoxBoardIoOutput output, uint8_t level)
 {
     (void)context;
-    if ((unsigned)output >= ABOX_BOARD_IO_OUTPUT_COUNT) return 0;
+    if ((unsigned)output >= (ABOX_BOARD_IO_RELAY + 1U)) return 0;
     HAL_GPIO_WritePin(outputs[output].gpio, outputs[output].pin,
                       level ? GPIO_PIN_SET : GPIO_PIN_RESET);
     return 1;
@@ -114,7 +114,7 @@ static int write_output(void *context, ABoxBoardIoOutput output, uint8_t level)
 static int read_output(void *context, ABoxBoardIoOutput output, uint8_t *level)
 {
     (void)context;
-    if ((unsigned)output >= ABOX_BOARD_IO_OUTPUT_COUNT || !level) return 0;
+    if ((unsigned)output >= (ABOX_BOARD_IO_RELAY + 1U) || !level) return 0;
     *level = (outputs[output].gpio->ODR & outputs[output].pin) ? 1U : 0U;
     return 1;
 }
@@ -122,7 +122,7 @@ static int read_output(void *context, ABoxBoardIoOutput output, uint8_t *level)
 static int read_output_pin(void *context, ABoxBoardIoOutput output, uint8_t *level)
 {
     (void)context;
-    if ((unsigned)output >= ABOX_BOARD_IO_OUTPUT_COUNT || !level) return 0;
+    if ((unsigned)output >= (ABOX_BOARD_IO_RELAY + 1U) || !level) return 0;
     *level = HAL_GPIO_ReadPin(outputs[output].gpio, outputs[output].pin) == GPIO_PIN_SET;
     return 1;
 }
@@ -163,7 +163,7 @@ const ABoxBoardIoPort *ABoxBoardIoStm32_Port(void)
 {
     static const ABoxBoardIoPort port = {
         0, prepare, write_output, read_output, read_input, write_led,
-        enter_critical, exit_critical, prepare_leds, read_output_pin
+        enter_critical, exit_critical, prepare_leds, read_output_pin, ABOX_BOARD_IO_LEGACY_OUTPUTS
     };
     return &port;
 }

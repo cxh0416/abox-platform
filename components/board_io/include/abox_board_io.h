@@ -12,8 +12,15 @@ typedef enum {
     ABOX_BOARD_IO_OUT2,
     ABOX_BOARD_IO_OUT3,
     ABOX_BOARD_IO_RELAY,
+    ABOX_BOARD_IO_PWR_OUT1,
+    ABOX_BOARD_IO_PWR_OUT2,
+    ABOX_BOARD_IO_P12V_OUT1,
+    ABOX_BOARD_IO_P12V_OUT2,
     ABOX_BOARD_IO_OUTPUT_COUNT
 } ABoxBoardIoOutput;
+
+#define ABOX_BOARD_IO_LEGACY_OUTPUTS 0x0FU
+#define ABOX_BOARD_IO_V3_OUTPUTS (0xF0U | (1U << ABOX_BOARD_IO_RELAY))
 
 typedef enum {
     ABOX_BOARD_IO_IN1 = 0,
@@ -78,6 +85,8 @@ typedef struct {
     /* Optional instantaneous MCU pin level; distinct from the output latch.
      * Neither reading confirms the state of an external load. */
     int (*read_output_pin)(void *context, ABoxBoardIoOutput output, uint8_t *level);
+    /* Zero selects the four legacy channels for existing ports. */
+    uint8_t valid_outputs;
 } ABoxBoardIoPort;
 
 /* Supplied by the selected hardware target after board GPIO initialization. */

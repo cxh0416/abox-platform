@@ -14,3 +14,9 @@ add_library(abox_boot_v2_boot STATIC src/abox_boot_v2_boot.c src/abox_boot_v2_in
 add_library(abox::boot_v2_boot ALIAS abox_boot_v2_boot)
 target_include_directories(abox_boot_v2_boot PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(abox_boot_v2_boot PUBLIC abox::boot_v2_common abox::core)
+
+add_library(abox_boot_v2_nor STATIC src/abox_boot_v2_nor.c)
+add_library(abox::boot_v2_nor ALIAS abox_boot_v2_nor)
+target_include_directories(abox_boot_v2_nor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(abox_boot_v2_nor PUBLIC abox::boot_v2_common abox::nor)
+target_link_libraries(abox_boot_v2_app PUBLIC abox::boot_v2_nor)

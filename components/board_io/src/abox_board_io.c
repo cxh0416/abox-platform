@@ -9,6 +9,11 @@ static int valid_output(ABoxBoardIoOutput output)
     return (unsigned)output < ABOX_BOARD_IO_OUTPUT_COUNT;
 }
 
+static uint8_t valid_outputs(const ABoxBoardIoPort *port)
+{
+    return port->valid_outputs ? port->valid_outputs : ABOX_BOARD_IO_LEGACY_OUTPUTS;
+}
+
 static int valid_led(ABoxBoardIoLed led)
 {
     return (unsigned)led < ABOX_BOARD_IO_LED_COUNT;
@@ -34,10 +39,11 @@ ABoxBoardIoResult ABoxBoardIo_Init(ABoxBoardIo *io, const ABoxBoardIoPort *port,
     if (!port || !port->prepare || !port->write_output ||
         !port->read_output || !port->read_input || !port->write_led ||
         !port->enter_critical || !port->exit_critical ||
-        (allowed_outputs & (uint8_t)~0x0fU) != 0U) return ABOX_BOARD_IO_IO_FAILED;
+        (allowed_outputs & (uint8_t)~valid_outputs(port)) != 0U) return ABOX_BOARD_IO_IO_FAILED;
     io->port = port;
     if (!port->prepare(port->context)) return ABOX_BOARD_IO_IO_FAILED;
     for (i = 0U; i < ABOX_BOARD_IO_OUTPUT_COUNT; ++i) {
+        if (!(valid_outputs(port) & (1U << i))) continue;
         if (!port->read_output(port->context, (ABoxBoardIoOutput)i, &level) || level)
             return ABOX_BOARD_IO_READBACK_FAILED;
     }
@@ -71,6 +77,7 @@ ABoxBoardIoResult ABoxBoardIo_OutputSet(ABoxBoardIo *io, ABoxBoardIoOutput outpu
     ABoxBoardIoResult result;
     if (!valid_output(output)) return ABOX_BOARD_IO_INVALID_CHANNEL;
     if (!io || !io->ready || !io->full_io) return ABOX_BOARD_IO_NOT_READY;
+    if (!(valid_outputs(io->port) & (1U << output))) return ABOX_BOARD_IO_INVALID_CHANNEL;
     key = enter(io);
     if (on && !(io->allowed_outputs & (1U << output))) result = ABOX_BOARD_IO_DENIED;
     else if (!io->port->write_output(io->port->context, output, !!on)) {
@@ -94,6 +101,7 @@ ABoxBoardIoResult ABoxBoardIo_OutputGet(ABoxBoardIo *io, ABoxBoardIoOutput outpu
     int ok;
     if (!valid_output(output) || !on) return ABOX_BOARD_IO_INVALID_CHANNEL;
     if (!io || !io->ready || !io->full_io) return ABOX_BOARD_IO_NOT_READY;
+    if (!(valid_outputs(io->port) & (1U << output))) return ABOX_BOARD_IO_INVALID_CHANNEL;
     key = enter(io);
     ok = io->port->read_output(io->port->context, output, on);
     leave(io, key);

@@ -30,6 +30,30 @@ abox_platform_attach_f105_app(ABoxF105Example
     HARDWARE "${ABOX_HARDWARE}"
     PRODUCT_CONFIG_DIR "${CMAKE_CURRENT_LIST_DIR}/config"
     ${example_can})
+option(ABOX_EXAMPLE_NOR_IDEM "Mount the V3 MQTT V4 idempotency log" OFF)
+option(ABOX_EXAMPLE_NOR_OTA "Link the V3 NOR OTA App path and check the Boot descriptor" OFF)
+option(ABOX_EXAMPLE_NOR_PROBE "Bench: erase and test the reserved V3 NOR sector" OFF)
+if(ABOX_EXAMPLE_NOR_IDEM OR ABOX_EXAMPLE_NOR_OTA OR ABOX_EXAMPLE_NOR_PROBE)
+    if(NOT ABOX_HARDWARE STREQUAL "gd32f105_ec800_v3")
+        message(FATAL_ERROR "The reference NOR options require the V3 hardware contract")
+    endif()
+    abox_platform_attach_v3_nor(ABoxF105Example)
+    target_compile_definitions(ABoxF105Example PRIVATE ABOX_EXAMPLE_NOR=1)
+endif()
+if(ABOX_EXAMPLE_NOR_PROBE)
+    target_compile_definitions(ABoxF105Example PRIVATE ABOX_EXAMPLE_NOR_PROBE=1)
+endif()
+if(ABOX_EXAMPLE_NOR_IDEM)
+    target_compile_definitions(ABoxF105Example PRIVATE ABOX_EXAMPLE_NOR_IDEM=1)
+    target_link_libraries(ABoxF105Example abox::mqtt_idem_nor)
+endif()
+if(ABOX_EXAMPLE_NOR_OTA)
+    target_compile_definitions(ABoxF105Example PRIVATE ABOX_EXAMPLE_NOR_OTA=1)
+    target_link_options(ABoxF105Example PRIVATE
+        "-Wl,--undefined=ABoxBootV2App_Init" "-Wl,--undefined=ABoxBootV2App_BeginProvisioning"
+        "-Wl,--undefined=ABoxBootV2App_Start" "-Wl,--undefined=ABoxBootV2App_Task"
+        "-Wl,--undefined=ABoxBootV2_Confirm")
+endif()
 if(ABOX_EXAMPLE_USB)
     abox_platform_attach_usb(ABoxF105Example HARDWARE "${ABOX_HARDWARE}")
     foreach(symbol IN ITEMS ABoxUsb_Open ABoxUsb_Start ABoxUsb_Stop ABoxUsb_Close ABoxUsb_Irq ABoxUsb_Poll

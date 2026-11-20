@@ -4,7 +4,7 @@
 
 typedef struct { uint32_t port; uint32_t pin; } BoardPin;
 #define PIN(n) (1UL << (n))
-static const BoardPin outputs[ABOX_BOARD_IO_OUTPUT_COUNT] = {
+static const BoardPin outputs[(ABOX_BOARD_IO_RELAY + 1U)] = {
     {GPIOA, PIN(ABOX_V1_OUT1_PIN)}, {GPIOA, PIN(ABOX_V1_OUT2_PIN)},
     {GPIOA, PIN(ABOX_V1_OUT3_PIN)}, {GPIOC, PIN(ABOX_V1_RELAY_PIN)}
 };
@@ -46,7 +46,7 @@ static int prepare_leds(void *context, uint8_t mask)
 static int write_output(void *context, ABoxBoardIoOutput output, uint8_t level)
 {
     (void)context;
-    if ((unsigned)output >= ABOX_BOARD_IO_OUTPUT_COUNT) return 0;
+    if ((unsigned)output >= (ABOX_BOARD_IO_RELAY + 1U)) return 0;
     if (level) gpio_bit_set(outputs[output].port, outputs[output].pin);
     else gpio_bit_reset(outputs[output].port, outputs[output].pin);
     return 1;
@@ -55,7 +55,7 @@ static int write_output(void *context, ABoxBoardIoOutput output, uint8_t level)
 static int read_output(void *context, ABoxBoardIoOutput output, uint8_t *level)
 {
     (void)context;
-    if ((unsigned)output >= ABOX_BOARD_IO_OUTPUT_COUNT || !level) return 0;
+    if ((unsigned)output >= (ABOX_BOARD_IO_RELAY + 1U) || !level) return 0;
     *level = gpio_output_bit_get(outputs[output].port, outputs[output].pin) != RESET;
     return 1;
 }
@@ -63,7 +63,7 @@ static int read_output(void *context, ABoxBoardIoOutput output, uint8_t *level)
 static int read_output_pin(void *context, ABoxBoardIoOutput output, uint8_t *level)
 {
     (void)context;
-    if ((unsigned)output >= ABOX_BOARD_IO_OUTPUT_COUNT || !level) return 0;
+    if ((unsigned)output >= (ABOX_BOARD_IO_RELAY + 1U) || !level) return 0;
     *level = gpio_input_bit_get(outputs[output].port, outputs[output].pin) != RESET;
     return 1;
 }
@@ -101,7 +101,7 @@ const ABoxBoardIoPort *ABoxBoardIo_HardwarePort(void)
 {
     static const ABoxBoardIoPort port = {
         0, prepare, write_output, read_output, read_input, write_led,
-        enter_critical, exit_critical, prepare_leds, read_output_pin
+        enter_critical, exit_critical, prepare_leds, read_output_pin, ABOX_BOARD_IO_LEGACY_OUTPUTS
     };
     return &port;
 }

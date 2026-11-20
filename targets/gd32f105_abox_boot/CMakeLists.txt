@@ -6,7 +6,7 @@ set(ABOX_PLATFORM_SCHEDULER BAREMETAL)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../.." platform)
 set(vendor "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/gd32f10x/2.7.0")
 set(mcu "${CMAKE_CURRENT_SOURCE_DIR}/../../hardware/mcu/gd32f105")
-add_executable(ABox_GD_Boot startup.c boot.c descriptor.c syscalls.c ufs_at.c
+add_executable(ABox_GD_Boot startup.c boot.c descriptor.c syscalls.c
     "${mcu}/flash_gd32f105.c"
     "${vendor}/GD32F10x_standard_peripheral/Source/gd32f10x_fmc.c"
     "${vendor}/GD32F10x_standard_peripheral/Source/gd32f10x_gpio.c"
@@ -16,11 +16,26 @@ target_include_directories(ABox_GD_Boot PRIVATE "${mcu}/include" "${vendor}/CMSI
     "${vendor}/CMSIS/GD/GD32F10x/Include" "${vendor}/GD32F10x_standard_peripheral/Include")
 target_compile_definitions(ABox_GD_Boot PRIVATE GD32F10X_CL HXTAL_VALUE=8000000U)
 target_compile_options(ABox_GD_Boot PRIVATE -mcpu=cortex-m3 -mthumb -Os -ffunction-sections -fdata-sections -Wall -Wextra)
+option(ABOX_GD_BOOT_NOR_AB "V3 Boot with board NOR dual OTA slots" OFF)
 option(ABOX_GD_BOOT_RAM_SMOKE "RAM-only bench build; all flash mutations disabled" OFF)
 option(ABOX_GD_BOOT_FLASH_PROBE "Bench build: test Flash unlock and relock only" OFF)
 option(ABOX_GD_BOOT_INSTALL_PROBE "Bench build: reinstall the verified stable App" OFF)
 option(ABOX_GD_BOOT_UFS_INFO_PROBE "Bench build: inspect slot sizes without modifying UFS" OFF)
 option(ABOX_GD_BOOT_APP_JUMP_PROBE "Bench build: exercise GD App jump without changing state pages" OFF)
+if(ABOX_GD_BOOT_NOR_AB)
+    if(ABOX_GD_BOOT_RAM_SMOKE OR ABOX_GD_BOOT_FLASH_PROBE OR ABOX_GD_BOOT_INSTALL_PROBE OR
+       ABOX_GD_BOOT_UFS_INFO_PROBE OR ABOX_GD_BOOT_APP_JUMP_PROBE)
+        message(FATAL_ERROR "The legacy GD Boot probe targets use the UFS variant")
+    endif()
+    target_compile_definitions(ABox_GD_Boot PRIVATE ABOX_GD_BOOT_NOR_AB=1)
+    set_target_properties(ABox_GD_Boot PROPERTIES OUTPUT_NAME ABox_GD_V3_NOR_Boot)
+    abox_platform_attach_v3_nor(ABox_GD_Boot)
+    target_sources(ABox_GD_Boot PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../hardware/boards/abox_v3/board_io_v3.c")
+    target_link_libraries(ABox_GD_Boot abox::board_io abox::boot_v2_nor)
+else()
+    target_sources(ABox_GD_Boot PRIVATE ufs_at.c)
+endif()
 if((ABOX_GD_BOOT_RAM_SMOKE AND ABOX_GD_BOOT_FLASH_PROBE) OR
    (ABOX_GD_BOOT_RAM_SMOKE AND ABOX_GD_BOOT_INSTALL_PROBE) OR
    (ABOX_GD_BOOT_FLASH_PROBE AND ABOX_GD_BOOT_INSTALL_PROBE) OR
@@ -61,7 +76,7 @@ endif()
 target_link_options(ABox_GD_Boot PRIVATE -mcpu=cortex-m3 -mthumb --specs=nano.specs --specs=nosys.specs
     "-T${boot_linker_script}" -Wl,--gc-sections -Wl,--print-memory-usage)
 set_property(TARGET ABox_GD_Boot APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/boot.ld")
-target_link_libraries(ABox_GD_Boot PRIVATE abox::boot_v2_boot)
+target_link_libraries(ABox_GD_Boot abox::boot_v2_boot)
 if(ABOX_GD_BOOT_RAM_SMOKE OR ABOX_GD_BOOT_FLASH_PROBE OR ABOX_GD_BOOT_INSTALL_PROBE OR
    ABOX_GD_BOOT_UFS_INFO_PROBE OR ABOX_GD_BOOT_APP_JUMP_PROBE)
     set_target_properties(ABox_GD_Boot PROPERTIES OUTPUT_NAME ABox_GD_Boot_Bench)

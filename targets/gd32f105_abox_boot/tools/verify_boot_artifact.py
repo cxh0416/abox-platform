@@ -7,7 +7,7 @@ import zlib
 from pathlib import Path
 
 
-def verify(path: Path) -> dict[str, str | int]:
+def verify(path: Path, nor: bool = False) -> dict[str, str | int]:
     image = path.read_bytes()
     if len(image) != 0x8000:
         raise ValueError("GD Boot image must be exactly 32 KiB")
@@ -18,10 +18,12 @@ def verify(path: Path) -> dict[str, str | int]:
         raise ValueError("reserved GD Boot test page is not padding")
     desc = image[0x7F00:]
     fields = struct.unpack_from("<IHHIHHH", desc)
-    if fields != (0x32564241, 1, 256, 15, 2, 3, 0):
+    feature_flags = 29 if nor else 15
+    version = "abox-boot-2.3.0-gd-v3-nor" if nor else "abox-boot-2.3.0-gd"
+    if fields != (0x32564241, 1, 256, feature_flags, 2, 3, 0):
         raise ValueError("GD Boot descriptor fields mismatch")
     if desc[20:52].split(b"\0", 1)[0] != b"abox_gd32f105" or \
-       desc[52:116].split(b"\0", 1)[0] != b"abox-boot-2.3.0-gd":
+       desc[52:116].split(b"\0", 1)[0] != version.encode("ascii"):
         raise ValueError("GD Boot descriptor identity mismatch")
     if zlib.crc32(desc[:252]) != struct.unpack_from("<I", desc, 252)[0]:
         raise ValueError("GD Boot descriptor CRC mismatch")
@@ -29,14 +31,15 @@ def verify(path: Path) -> dict[str, str | int]:
         if marker in image:
             raise ValueError("GD Boot contains a test marker")
     return {"size": len(image), "sha256": hashlib.sha256(image).hexdigest(),
-            "crc32": f"{zlib.crc32(image):08X}", "boot_version": "abox-boot-2.3.0-gd"}
+            "crc32": f"{zlib.crc32(image):08X}", "boot_version": version}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("image", type=Path)
+    parser.add_argument("--nor", action="store_true", help="Expect the V3 NOR descriptor")
     args = parser.parse_args()
-    for key, value in verify(args.image).items():
+    for key, value in verify(args.image, args.nor).items():
         print(f"{key}={value}")
 
 

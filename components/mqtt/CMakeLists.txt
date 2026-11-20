@@ -21,3 +21,8 @@ target_link_libraries(abox_mqtt_runtime PUBLIC abox::mqtt_tls abox::ec800_comman
 target_sources(abox_mqtt_runtime PRIVATE src/abox_mqtt_runtime_core_port.c)
 target_link_libraries(abox_mqtt_trial PUBLIC abox::mqtt_runtime)
 target_sources(abox_mqtt_trial PRIVATE src/abox_mqtt_trial_executor.c)
+
+add_library(abox_mqtt_idem_nor STATIC src/abox_mqtt_idem_nor.c)
+add_library(abox::mqtt_idem_nor ALIAS abox_mqtt_idem_nor)
+target_include_directories(abox_mqtt_idem_nor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(abox_mqtt_idem_nor PUBLIC abox::mqtt_idempotency abox::nor)

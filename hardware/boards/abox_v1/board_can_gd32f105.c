@@ -12,7 +12,13 @@ static int prepare(void *context,unsigned bus,ABoxCanMode mode)
     gpio_bit_reset(GPIOB,standby);
     gpio_init(GPIOB,GPIO_MODE_OUT_PP,GPIO_OSPEED_2MHZ,standby);
     rcu_periph_clock_enable(RCU_AF);
+#ifdef ABOX_BOARD_V3
+    /* SWJ_CFG is write-only. Keep SWD when changing either CAN mapping. */
+    AFIO_PCF0 = (AFIO_PCF0 & ~(AFIO_PCF0_SWJ_CFG |
+        (bus ? AFIO_PCF0_CAN1_REMAP : AFIO_PCF0_CAN0_REMAP))) | (2UL << 24);
+#else
     gpio_pin_remap_config(bus ? GPIO_CAN1_REMAP : GPIO_CAN0_FULL_REMAP,DISABLE);
+#endif
     gpio_init(port,GPIO_MODE_IN_FLOATING,GPIO_OSPEED_2MHZ,1U<<(bus ? 12U : 11U));
     gpio_init(port,GPIO_MODE_AF_PP,GPIO_OSPEED_50MHZ,1U<<(bus ? 13U : 12U));
     return 1;

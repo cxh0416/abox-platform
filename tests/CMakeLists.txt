@@ -260,6 +260,12 @@ target_include_directories(gd32f105_v1_board_test PRIVATE gd32_board_stub
     ../hardware/boards/abox_v1/include)
 target_link_libraries(gd32f105_v1_board_test PRIVATE abox::board_io)
 add_test(NAME gd32f105_v1_board_test COMMAND gd32f105_v1_board_test)
+add_executable(gd32f105_v3_board_test gd32f105_v3_board_test.c
+    ../hardware/boards/abox_v3/board_io_v3.c)
+target_include_directories(gd32f105_v3_board_test PRIVATE gd32_board_stub ../hardware/api/include)
+target_link_libraries(gd32f105_v3_board_test PRIVATE abox::board_io)
+add_test(NAME gd32f105_v3_board_test COMMAND gd32f105_v3_board_test)
+
 add_executable(stm32f105_board_startup_test stm32f105_board_startup_test.c
     ../hardware/boards/abox_v2/board_stm32f105.c)
 target_include_directories(stm32f105_board_startup_test PRIVATE stm32_board_stub
@@ -464,6 +470,8 @@ add_executable(abox_enrollment_service_test abox_enrollment_service_test.c)
 target_link_libraries(abox_enrollment_service_test PRIVATE abox::app_service)
 target_link_libraries(abox_enrollment_service_test PRIVATE abox::enrollment_ec800_http)
 add_test(NAME abox_enrollment_service_test COMMAND abox_enrollment_service_test)
+target_link_libraries(abox_boot_v2_app_test PRIVATE abox::boot_v2_boot abox::mqtt_idem_nor)
+
 add_executable(abox_boot_v2_ec800_port_test abox_boot_v2_ec800_port_test.c)
 target_link_libraries(abox_boot_v2_ec800_port_test PRIVATE abox::boot_v2_app)
 add_test(NAME abox_boot_v2_ec800_port_test COMMAND abox_boot_v2_ec800_port_test)
@@ -587,3 +595,7 @@ add_test(NAME abox_pwm_dma_test COMMAND abox_pwm_dma_test)
 add_executable(abox_timer_burst_test abox_timer_burst_test.c ../hardware/api/src/abox_timer_burst.c)
 target_include_directories(abox_timer_burst_test PRIVATE ../hardware/api/include ../hardware/internal/include)
 add_test(NAME abox_timer_burst_test COMMAND abox_timer_burst_test)
+
+add_executable(abox_mqtt_idem_nor_test abox_mqtt_idem_nor_test.c)
+target_link_libraries(abox_mqtt_idem_nor_test PRIVATE abox::mqtt_idem_nor)
+add_test(NAME abox_mqtt_idem_nor_test COMMAND abox_mqtt_idem_nor_test)

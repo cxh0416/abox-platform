@@ -7,6 +7,9 @@
 
 #define ABOX_BOARD_UART_BUS 5U
 #define ABOX_BOARD_UART_MODEM 1U
+#define ABOX_BOARD_UART_RS232 3U
+#define ABOX_BOARD_UART_TTL   4U
+#define ABOX_BOARD_UART_RS485 5U
 
 typedef struct {
     ABoxUartId id;
@@ -24,8 +27,7 @@ typedef struct {
  * startup on failure. */
 int ABoxBoard_Init(const ABoxBoardConfig *config);
 
-/* Configure only the known board pins and IRQs for UART1 (modem) and UART5
- * (bus). Other boards configure their GPIO, remapping and NVIC separately. */
+/* Configure the selected board's wired UART pins and IRQs. */
 int ABoxBoardUart_Prepare(ABoxUartId id);
 
 /* Optional diagnostic hooks. UART event delivery remains owned by the port. */

@@ -18,3 +18,13 @@ python "$target/tools/verify_boot_artifact.py" build/boot-gd32/Release/ABox_GD_B
 当前已验证交叉构建、向量和描述符 CRC、故障邮箱地址以及安装器主机测试。早期 `abox-gd-boot-1.0.0` 台架实现已在 V1 上从 RAM 和 Flash 启动，完成 EC800/UFS 初始化、稳定槽校验、保留测试页实际擦写和回读，以及从稳定槽重装相同 App 后跳转。当前 `2.3.0-gd` 冻结制品没有完整候选槽切换、掉电恢复和试运行/回滚实机记录；新 Boot 写入在役板前须核对迁移和恢复路径。
 
 链接脚本将 `0x08007000..0x080077FF` 留作受控台架测试页，禁止 Boot 代码和数据占用。仅专用测试构建可使用该页；写入前须核对页内预期填充值，并在测试后从已核对的原 Boot 制品恢复该页。普通 Boot 不访问该页。
+
+## V3.3 NOR Boot 参考构建
+
+```powershell
+cmake -S targets/gd32f105_abox_boot -B build/boot/v3-nor -G Ninja '-DCMAKE_BUILD_TYPE=Release' '-DCMAKE_TOOLCHAIN_FILE=gcc-arm-none-eabi.cmake' '-DABOX_GD_BOOT_NOR_AB=ON'
+cmake --build build/boot/v3-nor --target ABox_GD_Boot
+python targets/gd32f105_abox_boot/tools/verify_boot_artifact.py --nor build/boot/v3-nor/ABox_GD_V3_NOR_Boot.bin
+```
+
+V3 构建输出为 `ABox_GD_V3_NOR_Boot.bin`，描述符为 `abox-boot-2.3.0-gd-v3-nor` 并声明 `NOR_AB`。该构建从板载 NOR 安装和回滚，启动期间关闭 EC800 电源。产品从已验证的配套 App 和 Boot 构建发布。V1 的冻结制品继续使用上述 UFS 路径。

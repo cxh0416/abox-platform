@@ -18,6 +18,7 @@ extern "C" {
 #define ABOX_BOOT_V2_FEATURE_UFS_AB         (1UL << 1)
 #define ABOX_BOOT_V2_FEATURE_APP_STAGING    (1UL << 2)
 #define ABOX_BOOT_V2_FEATURE_ROLLBACK_REPORT (1UL << 3)
+#define ABOX_BOOT_V2_FEATURE_NOR_AB         (1UL << 4)
 #define ABOX_BOOT_V2_REQUIRED_FEATURES      0x0000000FUL
 
 #define ABOX_BOOT_V2_ERROR_NONE 0U
@@ -114,6 +115,7 @@ int ABoxBootV2_ImageVectorValid(const uint8_t vector[8]);
 int ABoxBootV2_DescriptorRead(ABoxBootV2Descriptor *descriptor);
 int ABoxBootV2_DescriptorValid(const ABoxBootV2Descriptor *descriptor);
 int ABoxBootV2_DescriptorReady(const ABoxBootV2Descriptor *descriptor);
+int ABoxBootV2_DescriptorReadyFor(const ABoxBootV2Descriptor *descriptor, uint32_t storage_feature);
 void ABoxBootV2_FaultRecord(uint32_t reason, uint32_t pc, uint32_t lr);
 int ABoxBootV2_FaultValid(void);
 void ABoxBootV2_FaultClear(void);

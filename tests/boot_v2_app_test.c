@@ -1,5 +1,11 @@
 #include "abox_boot_v2_app.h"
 #include "abox_platform_port.h"
+#include "abox_boot_v2_installer.h"
+#include "abox_boot_v2_nor.h"
+#include "abox_mqtt_idem_nor.h"
+#undef NDEBUG
+#include "nor_test_chip.h"
+#include <setjmp.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -11,6 +17,7 @@
     fprintf(stderr, "check failed: %s (%s:%d)\n", #condition, __FILE__, __LINE__); \
     exit(1); \
 } } while (0)
+#undef assert
 #define assert(condition) CHECK(condition)
 
 #define BASE 0x08000000U
@@ -18,6 +25,8 @@
 #define STATE_B 0x0803F000U
 #define PROBE_COUNT 15U
 
+static NorTestChip nor_chip;
+static ABoxNor test_nor;
 static uint8_t flash_mem[0x40000];
 static uint8_t transfer[ABOX_BOOT_V2_APP_RAW_CHUNK];
 static ABoxBootV2AtDoneFn pending_done;
@@ -225,7 +234,7 @@ static void prepare_flash(void)
     memcpy(flash_mem + ABOX_BOOT_V2_DESCRIPTOR_ADDR - BASE, &descriptor, sizeof(descriptor));
 }
 
-static void init_app(void)
+static void init_app_for(ABoxNor *nor)
 {
     ABoxBootV2AppPort port = {
         0, tick, submit, send_payload, begin_raw, has_pending, is_active,
@@ -236,9 +245,12 @@ static void init_app(void)
         "abox-v2-", "abox-v2-current", ca, sizeof(ca) - 1U,
         0x08008000U, 128U, 0x36800U
     };
+    config.nor = nor;
     if (use_seed_gate) port.may_start_seed = may_start_seed;
     assert(ABoxBootV2App_Init(&port, &config));
 }
+
+static void init_app(void) { init_app_for(NULL); }
 
 static void complete_probes(void)
 {
@@ -624,6 +636,244 @@ static void test_delegated_mqtt_quiesce(void)
     assert(delegated_returns == 0U && mqtt_paused);
 }
 
+
+static unsigned boot_jumps, installed_bytes, cut_at_write;
+static int reset_reason;
+static ABoxBootV2NorReader reader;
+static uint8_t install_buffer[1024];
+static jmp_buf power_cut;
+
+static int install_word(void *context, uint32_t address, const uint8_t data[4])
+{
+    assert(flash_write(context, address, data, 4U));
+    installed_bytes += 4U;
+    if (cut_at_write && installed_bytes == cut_at_write) longjmp(power_cut, 1);
+    return 1;
+}
+
+static int validate_vector(void *context, const uint8_t vector[8])
+{
+    (void)context;
+    return ABoxBootV2_ImageVectorValid(vector);
+}
+
+static ABoxBootV2InstallResult nor_install(void *context, uint8_t slot, uint32_t size, uint32_t crc)
+{
+    (void)context;
+    const ABoxBootV2Installer port = {
+        &reader, ABoxBootV2NorReader_Open, ABoxBootV2NorReader_Read, ABoxBootV2NorReader_Close,
+        flash_begin, flash_erase, install_word, flash_read, flash_end, validate_vector,
+        0x08008000U, STATE_A, 0x800U, install_buffer, sizeof(install_buffer)
+    };
+    reader = (ABoxBootV2NorReader){.nor = &test_nor, .size = size, .crc = crc};
+    return ABoxBootV2_Install(&port, slot, size, crc);
+}
+
+static uint8_t installed_valid(void *context, uint32_t size, uint32_t crc)
+{
+    (void)context;
+    return size >= 8U && size <= STATE_A - 0x08008000U &&
+           ABoxBootV2_Crc32(flash_mem + 0x8000, size) == crc;
+}
+
+static void jump_test(void *context) { (void)context; ++boot_jumps; }
+static uint8_t reset_test(void *context) { (void)context; return (uint8_t)reset_reason; }
+
+static void restart_boot(void)
+{
+    static const ABoxBootV2BootPort port = {
+        .flash_image_valid = installed_valid, .install_slot = nor_install,
+        .jump_to_app = jump_test, .reset_reason = reset_test
+    };
+    nor_test_open(&nor_chip, &test_nor);
+    assert(ABoxBootV2Boot_Init(&port));
+}
+
+static void descriptor_for(uint32_t feature)
+{
+    ABoxBootV2Descriptor desc = {
+        .magic = ABOX_BOOT_V2_DESCRIPTOR_MAGIC, .abi_version = ABOX_BOOT_V2_DESCRIPTOR_ABI,
+        .length = sizeof(desc), .feature_flags =
+            (ABOX_BOOT_V2_REQUIRED_FEATURES & ~ABOX_BOOT_V2_FEATURE_UFS_AB) | feature
+    };
+    desc.crc32 = ABoxBootV2_Crc32(&desc, (uint32_t)offsetof(ABoxBootV2Descriptor, crc32));
+    memcpy(flash_mem + ABOX_BOOT_V2_DESCRIPTOR_ADDR - BASE, &desc, sizeof(desc));
+}
+
+static void start_nor_app(void)
+{
+    reset_transport();
+    init_app_for(&test_nor);
+    complete_probes();
+    finish_existing_ca();
+}
+
+static void nor_candidate(const uint8_t *image, unsigned size, int interrupt_copy)
+{
+    ABoxBootV2AppRequest request = { .size = size, .crc32 = ABoxBootV2_Crc32(image, size) };
+    snprintf(request.url, sizeof(request.url),
+        "https://ota.example:20443/fw-revisions/meal_delivery_vehicle/abox-v2-next/meal_delivery_vehicle_app.bin");
+    snprintf(request.version, sizeof(request.version), "abox-v2-next");
+    assert(ABoxBootV2App_Start(&request));
+    complete(ABOX_BOOT_V2_AT_OK);
+    complete(ABOX_BOOT_V2_AT_OK);
+    unsigned read_offset = 0U;
+
+    for (unsigned i = 0; i < 400; ++i) {
+        ABoxBootV2App_Task();
+        if (ABoxBootV2App_TakeInstallReady()) {
+            assert(!interrupt_copy && !mqtt_paused);
+            return;
+        }
+        if (interrupt_copy && strcmp(ABoxBootV2App_Phase(), "NOR_COPY") == 0) {
+            /* One page reached NOR, while state still selects the stable image. */
+            ABoxBootV2App_Task();
+            nor_test_open(&nor_chip, &test_nor);
+            start_nor_app();
+            return;
+        }
+        if (!pending) continue;
+        char reply[80];
+        if (strstr(command, "QHTTPURL")) {
+            line("CONNECT");
+            ABoxBootV2App_Task();
+        } else if (!strcmp(command, "AT+QHTTPGET=80")) {
+            snprintf(reply, sizeof(reply), "+QHTTPGET: 0,200,%u", size);
+            line(reply);
+        } else if (strstr(command, "QFLST")) {
+            assert(strstr(command, "fw_nor_stage.bin"));
+            snprintf(reply, sizeof(reply), "+QFLST: \"UFS:fw_nor_stage.bin\",%u", size);
+            line(reply);
+        } else if (strstr(command, "QFOPEN")) {
+            assert(strstr(command, "fw_nor_stage.bin"));
+            read_offset = 0U;
+            line("+QFOPEN: 8");
+        } else if (strstr(command, "QFREAD=8,")) {
+            unsigned length;
+            assert(sscanf(command, "AT+QFREAD=8,%u", &length) == 1);
+            assert(length && length <= size - read_offset);
+            snprintf(reply, sizeof(reply), "CONNECT %u", length);
+            line(reply);
+            assert(raw_wanted == length);
+            raw(image + read_offset, (uint16_t)(length / 2U));
+            raw(image + read_offset + length / 2U, (uint16_t)(length - length / 2U));
+            read_offset += length;
+        }
+        if (!strcmp(command, "AT+QHTTPSTOP") || !strcmp(command, "AT+QIDEACT=1") ||
+            strstr(command, "QFDEL"))
+            complete(ABOX_BOOT_V2_AT_ERROR);
+        else
+            complete(ABOX_BOOT_V2_AT_OK);
+    }
+    assert(0);
+}
+
+static void test_nor_ota(void)
+{
+    static const uint8_t vectors[8] = {0, 0x40, 0, 0x20, 1, 0x81, 0, 0x08};
+    static ABoxMqttIdemNor idem;
+    const uint8_t digest[32] = {9U};
+    ABoxClockSnapshot clock = {.quality = ABOX_CLOCK_SYNCHRONIZED, .utc_ms = 1800000000000ULL};
+    uint8_t stable[128], candidate[1457];
+    char saved_responses[4][1024];
+    const unsigned response_count = ABOX_IDEM_NOR_LOG_SECTORS > 1U ? 4U : 3U;
+    ABoxBootV2Record state;
+    size_t handle;
+    nor_test_fresh(&nor_chip, &test_nor);
+    memset(flash_mem, 0xFF, sizeof(flash_mem));
+    memset(stable, 0x42, sizeof(stable));
+    memset(candidate, 0x63, sizeof(candidate));
+    memcpy(stable, vectors, sizeof(vectors));
+    memcpy(candidate, vectors, sizeof(vectors));
+    memcpy(flash_mem + 0x8000, stable, sizeof(stable));
+
+    assert(ABoxMqttIdemNor_Init(&idem, &test_nor, "device-1"));
+    for (unsigned i = 0; i < 1000 && !idem.cache.ready; ++i) ABoxMqttIdem_Poll(&idem.cache);
+    for (unsigned i = 0U; i < response_count; ++i) {
+        char id[20];
+        snprintf(id, sizeof(id), "ota-survivor-%u", i);
+        memset(saved_responses[i], (int)('a' + i), sizeof(saved_responses[i]));
+        assert(ABoxMqttIdem_Begin(&idem.cache, id, digest, clock.utc_ms + 5000,
+                                &clock, &handle) == 200);
+        ABoxMqttIdem_Poll(&idem.cache);
+        ABoxMqttIdem_Poll(&idem.cache);
+        assert(ABoxMqttIdem_TakeExecutable(&idem.cache, handle, &clock) == 200);
+        assert(ABoxMqttIdem_Complete(&idem.cache, handle, saved_responses[i], sizeof(saved_responses[i])));
+        for (unsigned pass = 0U; pass < 8U; ++pass) ABoxMqttIdem_Poll(&idem.cache);
+        assert(ABoxMqttIdem_State(&idem.cache, handle) == ABOX_IDEM_FINAL);
+    }
+
+    descriptor_for(ABOX_BOOT_V2_FEATURE_UFS_AB);
+    start_nor_app();
+    ABoxBootV2App_Task();
+    assert(!ABoxBootV2App_IsReady() && !pending);
+    assert(!ABoxBootV2_StateLoad(&state));
+
+    descriptor_for(ABOX_BOOT_V2_FEATURE_NOR_AB);
+    ABoxBootV2Descriptor desc;
+    assert(ABoxBootV2_DescriptorRead(&desc) && !ABoxBootV2_DescriptorReady(&desc));
+    ABoxBootV2App_Task();
+    complete(ABOX_BOOT_V2_AT_OK);
+    complete(ABOX_BOOT_V2_AT_OK);
+    for (unsigned i = 0; i < 30 && ABoxBootV2App_IsBusy(); ++i) ABoxBootV2App_Task();
+    assert(ABoxBootV2App_IsReady() && !mqtt_paused);
+    assert(ABoxBootV2_StateLoad(&state) && state.state == ABOX_BOOT_V2_CONFIRMED);
+    assert(state.stable_slot == 0 && state.stable_image_crc32 == ABoxBootV2_Crc32(stable, sizeof(stable)));
+
+    nor_candidate(candidate, sizeof(candidate), 1);
+    assert(ABoxBootV2_StateLoad(&state) && state.state == ABOX_BOOT_V2_CONFIRMED);
+    assert(!ABoxBootV2Nor_Matches(&test_nor, 1, sizeof(candidate),
+                                ABoxBootV2_Crc32(candidate, sizeof(candidate))));
+    nor_candidate(candidate, sizeof(candidate), 0);
+    assert(ABoxBootV2_StateLoad(&state) && state.state == ABOX_BOOT_V2_INSTALL_PENDING);
+    assert(state.stable_slot == 0 && state.candidate_slot == 1);
+
+    restart_boot();
+    installed_bytes = boot_jumps = 0;
+    cut_at_write = 32U;
+    if (setjmp(power_cut) == 0) {
+        ABoxBootV2Boot_Task();
+        assert(0);
+    }
+    assert(ABoxBootV2_StateLoad(&state) && state.state == ABOX_BOOT_V2_INSTALLING && !boot_jumps);
+    cut_at_write = 0;
+    restart_boot();
+    ABoxBootV2Boot_Task();
+    assert(ABoxBootV2_StateLoad(&state) && state.state == ABOX_BOOT_V2_TRIAL && boot_jumps == 1);
+    assert(!memcmp(flash_mem + 0x8000U, candidate, sizeof(candidate)));
+
+    reset_reason = 3;
+    for (unsigned i = 0; i < 4; ++i) {
+        restart_boot();
+        ABoxBootV2Boot_Task();
+    }
+    assert(ABoxBootV2_StateLoad(&state) && state.state == ABOX_BOOT_V2_ROLLBACK && state.rollback_installed);
+    assert(!memcmp(flash_mem + 0x8000U, stable, sizeof(stable)));
+    assert(ABoxBootV2_AcknowledgeRollback());
+
+    /* Re-mount following the rollback and replay byte for byte. */
+    assert(ABoxMqttIdemNor_Init(&idem, &test_nor, "device-1"));
+    for (unsigned i = 0; i < 1000 && !idem.cache.ready; ++i) ABoxMqttIdem_Poll(&idem.cache);
+    for (unsigned i = 0U; i < response_count; ++i) {
+        char id[20];
+        size_t length;
+        snprintf(id, sizeof(id), "ota-survivor-%u", i);
+        assert(ABoxMqttIdem_Find(&idem.cache, id, digest, &handle) == ABOX_IDEM_REPLAY);
+        const char *saved = ABoxMqttIdem_Response(&idem.cache, handle, &length);
+        assert(saved && length == sizeof(saved_responses[i]) && !memcmp(saved, saved_responses[i], length));
+        assert(ABoxMqttIdem_TakeExecutable(&idem.cache, handle, &clock) == 4003);
+    }
+
+    reset_reason = 0;
+    start_nor_app();
+    nor_candidate(candidate, sizeof(candidate), 0);
+    restart_boot();
+    ABoxBootV2Boot_Task();
+    assert(ABoxBootV2_Confirm());
+    assert(ABoxBootV2_StateLoad(&state) && state.state == ABOX_BOOT_V2_CONFIRMED);
+    assert(state.stable_slot == 1 && !memcmp(flash_mem + 0x8000U, candidate, sizeof(candidate)));
+}
+
 int main(void)
 {
     bind_platform();
@@ -648,5 +898,6 @@ int main(void)
     test_download_failure_waits_before_retry(ABOX_BOOT_V2_AT_TIMEOUT, 1U);
     test_download_failure_waits_before_retry(ABOX_BOOT_V2_AT_SEND_FAIL, 0U);
     test_download_failure_waits_before_retry(ABOX_BOOT_V2_AT_SEND_FAIL, 1U);
+    test_nor_ota();
     return 0;
 }

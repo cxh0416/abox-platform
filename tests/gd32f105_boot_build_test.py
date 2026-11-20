@@ -41,3 +41,15 @@ for name in ("ABoxGd32Flash_Begin", "ABoxGd32Flash_Write", "ABoxGd32Flash_EraseP
     assert any(line.endswith(" __wrap_" + name) for line in ram_symbols.splitlines())
     assert not any(line.endswith(" " + name) for line in ram_symbols.splitlines())
 print("GD Boot vectors, reserved mailbox, descriptor CRC and shared feature flags verified")
+
+nor = pathlib.Path(sys.argv[1]) / "gd32-boot-nor-contract"
+subprocess.run(["cmake", "-S", str(source), "-B", str(nor), "-G", "Ninja",
+                "-DCMAKE_BUILD_TYPE=Release", "-DABOX_GD_BOOT_NOR_AB=ON",
+                "-DCMAKE_TOOLCHAIN_FILE=" + str(source / "gcc-arm-none-eabi.cmake")], check=True)
+subprocess.run(["cmake", "--build", str(nor), "--target", "ABox_GD_Boot"], check=True)
+subprocess.run([sys.executable, str(source / "tools/verify_boot_artifact.py"), "--nor",
+                str(nor / "ABox_GD_V3_NOR_Boot.bin")], check=True)
+symbols = subprocess.check_output(["arm-none-eabi-nm", str(nor / "ABox_GD_V3_NOR_Boot")], text=True)
+names = {line.split()[-1] for line in symbols.splitlines() if line.split()}
+assert {"ABoxBootV2NorReader_Open", "ABoxBootV2NorReader_Read", "ABoxBoardV3_NorOpen"} <= names
+assert not any(name.startswith("ABoxGdBootUfs_") or name.startswith("usart_") for name in names)

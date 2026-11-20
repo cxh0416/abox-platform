@@ -1,4 +1,4 @@
-"""Build the documented F105 entry and link the real CAN Port for both MCUs."""
+"""Build the documented F105 entry and link the real CAN Port for all three boards."""
 import pathlib
 import subprocess
 import sys
@@ -8,14 +8,17 @@ out = pathlib.Path(sys.argv[1])
 toolchain = root / "cmake/toolchains/gcc-arm-none-eabi-f105.cmake"
 for name, hardware, board, vendor_symbol in (
         ("gd", "gd32f105_ec800_v1", "v1", "can_init"),
-        ("st", "stm32f105_ec800_v1", "v2", "HAL_CAN_Init")):
+        ("st", "stm32f105_ec800_v1", "v2", "HAL_CAN_Init"),
+        ("v3", "gd32f105_ec800_v3", "v3", "can_init")):
     build = out / ("f105-example-" + name)
+    nor_options = ["-DABOX_EXAMPLE_NOR_IDEM=ON", "-DABOX_EXAMPLE_NOR_OTA=ON",
+                   "-DABOX_EXAMPLE_NOR_PROBE=ON"] if board == "v3" else []
     subprocess.run(["cmake", "-S", str(root / "examples/f105_app"), "-B", str(build),
                     "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                     "-DCMAKE_TOOLCHAIN_FILE=" + str(toolchain),
                     "-DABOX_HARDWARE=" + hardware, "-DABOX_BOARD_VERSION=" + board,
                     "-DABOX_EXAMPLE_CAN=ON", "-DABOX_EXAMPLE_CAN_EVENTS=ON",
-                    "-DABOX_EXAMPLE_EXTRA_HAL=ON", "-DABOX_EXAMPLE_USB=ON"], check=True)
+                    "-DABOX_EXAMPLE_EXTRA_HAL=ON", "-DABOX_EXAMPLE_USB=ON", *nor_options], check=True)
     subprocess.run(["cmake", "--build", str(build)], check=True)
     symbols = subprocess.check_output(["arm-none-eabi-nm", str(build / "ABoxF105Example")], text=True)
     names = {line.split()[-1] for line in symbols.splitlines() if line.split()}
@@ -34,9 +37,12 @@ for name, hardware, board, vendor_symbol in (
             "ABoxCrc_Open", "ABoxCrc_UpdateWords", "ABoxCrc_Read", "ABoxBackup_Read", "ABoxBackup_Write", "ABoxBackup_TamperConfigure", "ABoxBackup_TamperRead", "ABoxBackup_TamperClear",
             "ABoxPvd_Open", "ABoxPvd_Irq", "ABoxPvd_Close", "ABoxPinMux_Configure", "ABoxPinMux_SetDebug",
             "ABoxGpio_Lock", "ABoxGpio_GetLocked", "ABoxFlashOptions_ReadActive", "ABoxFlashOptions_Write", "ABoxAdc_AdvanceDualInjected", "ABoxAdc_AbortDualDma", "ABoxTimer_StartBurstDmaOn", "ABoxTimer_SetCaptureDmaOnUpdate"} <= names, name
+    if board == "v3":
+        assert {"ABoxBoardV3_NorOpen", "ABoxMqttIdemNor_Init", "ABoxBootV2App_Start",
+                "ABoxBootV2NorWriter_VerifyTask", "g_abox_example_nor_probe"} <= names
     if name == "st":
         assert "MX_CAN1_Init" not in names and "MX_CAN2_Init" not in names
         assert {"SPI2_IRQHandler", "SPI3_IRQHandler", "WWDG_IRQHandler", "ADC1_2_IRQHandler", "OTG_FS_IRQHandler", "PVD_IRQHandler", "HAL_PCD_Init", "HAL_HCD_Init"} <= names
     else:
         assert {"SPI1_IRQHandler", "SPI2_IRQHandler", "WWDGT_IRQHandler", "ADC0_1_IRQHandler", "USBFS_IRQHandler", "LVD_IRQHandler", "usb_devcore_init", "usb_host_init"} <= names
-print("F105 examples linked both board implementations and all selected peripheral APIs")
+print("F105 examples linked all three board implementations and all selected peripheral APIs")

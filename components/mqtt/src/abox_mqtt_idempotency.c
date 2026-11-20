@@ -75,6 +75,7 @@ ABoxMqttIdemMatch ABoxMqttIdem_Find(const ABoxMqttIdempotency *c,
     const char *id, const uint8_t digest[32], size_t *index)
 {
     size_t i;
+    if (c && c->backend) return c->backend->find(c->backend_context,id,digest,index);
     if (!c || !id || !digest || !c->ready || !c->port.loaded(c->port.context)) return ABOX_IDEM_UNAVAILABLE;
     for (i=0;i<c->count;++i) {
         const ABoxMqttIdemEntry *e=&c->entries[i];
@@ -94,6 +95,7 @@ uint16_t ABoxMqttIdem_Begin(ABoxMqttIdempotency *c, const char *id, const uint8_
         !expires || expires>9007199254740991ULL) return 4001;
     match=ABoxMqttIdem_Find(c,id,digest,index);
     if (match!=ABOX_IDEM_NEW) return match==ABOX_IDEM_CONFLICT ? 4006 : 4003;
+    if (c->backend) return c->backend->begin(c->backend_context,id,digest,expires,clock,index);
     if (c->active<c->count) return 4003;
     code=ABoxMqttV4_CheckExpiry(clock,expires); if (code!=200) return code;
     for (i=0;i<c->count;++i) {
@@ -116,6 +118,7 @@ void ABoxMqttIdem_Invalidate(ABoxMqttIdempotency *c)
 {
     size_t i;
     if (!c) return;
+    if (c->backend) { c->backend->invalidate(c->backend_context); return; }
     c->failed=1; c->active=c->count; c->committing=0;
     for (i=0;i<c->count;++i) if (c->entries[i].state && c->entries[i].state!=ABOX_IDEM_FINAL)
         c->entries[i].state=ABOX_IDEM_INTERRUPTED;
@@ -123,6 +126,7 @@ void ABoxMqttIdem_Invalidate(ABoxMqttIdempotency *c)
 void ABoxMqttIdem_Poll(ABoxMqttIdempotency *c)
 {
     int result;
+    if (c && c->backend) { c->backend->poll(c->backend_context); return; }
     if (!c || c->failed || c->active>=c->count) return;
     result=c->committing ? c->port.poll(c->port.context) : c->port.commit(c->port.context);
     if (result<0) { ABoxMqttIdem_Invalidate(c); return; }
@@ -136,6 +140,7 @@ void ABoxMqttIdem_Poll(ABoxMqttIdempotency *c)
 uint16_t ABoxMqttIdem_TakeExecutable(ABoxMqttIdempotency *c, size_t i, const ABoxClockSnapshot *clock)
 {
     uint16_t code;
+    if (c && c->backend) return c->backend->take(c->backend_context,i,clock);
     if (!c || !c->ready || c->failed || !c->port.loaded(c->port.context) ||
         i>=c->count || c->entries[i].state!=ABOX_IDEM_PREPARED) return 4003;
     code=ABoxMqttV4_CheckExpiry(clock,c->entries[i].expires_at);
@@ -144,6 +149,7 @@ uint16_t ABoxMqttIdem_TakeExecutable(ABoxMqttIdempotency *c, size_t i, const ABo
 }
 int ABoxMqttIdem_Complete(ABoxMqttIdempotency *c, size_t i, const char *response, size_t size)
 {
+    if (c && c->backend) return c->backend->complete(c->backend_context,i,response,size);
     if (!c || !c->ready || c->failed || i>=c->count || c->active<c->count || !response ||
         !size || size>=c->response_capacity || memchr(response,0,size) ||
         (c->entries[i].state!=ABOX_IDEM_DISPATCHED && c->entries[i].state!=ABOX_IDEM_PREPARED)) return 0;
@@ -154,8 +160,15 @@ int ABoxMqttIdem_Complete(ABoxMqttIdempotency *c, size_t i, const char *response
 }
 const char *ABoxMqttIdem_Response(const ABoxMqttIdempotency *c, size_t i, size_t *length)
 {
+    if (c && c->backend) return c->backend->response(c->backend_context,i,length);
     if (!c || !c->ready || !c->port.loaded(c->port.context) ||
         i>=c->count || c->entries[i].state!=ABOX_IDEM_FINAL) return NULL;
     if (length) *length=c->entries[i].response_length;
     return (const char *)c->responses+i*c->response_capacity;
+}
+
+ABoxMqttIdemState ABoxMqttIdem_State(const ABoxMqttIdempotency *c, size_t i)
+{
+    if (c && c->backend) return c->backend->state(c->backend_context,i);
+    return c && i<c->count ? (ABoxMqttIdemState)c->entries[i].state : ABOX_IDEM_EMPTY;
 }

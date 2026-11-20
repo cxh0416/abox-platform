@@ -7,6 +7,10 @@
 #include "boot_cfg.h"
 #include "ec_power.h"
 #include "gd32f10x.h"
+#ifdef ABOX_BOARD_V3
+#include "abox_board_v3.h"
+static uint8_t modem_powered, board_ready;
+#endif
 #ifdef ABOX_V1_CAN_BOARD
 int ABoxGdV1Can_Bind(void);
 #endif
@@ -28,11 +32,30 @@ static int flash_read(void *context, uint32_t address, uint8_t *data, uint32_t l
 static void critical_enter(void *context) { (void)context; __disable_irq(); }
 static void critical_leave(void *context) { (void)context; __enable_irq(); }
 static void power_write(void *context, uint8_t level)
-{ (void)context; if (level) gpio_bit_set(GPIOC, 1U << 7); else gpio_bit_reset(GPIOC, 1U << 7); }
+{
+    (void)context;
+#ifdef ABOX_BOARD_V3
+    modem_powered = !!level;
+#endif
+    if (level) gpio_bit_set(GPIOC, 1U << 7);
+    else gpio_bit_reset(GPIOC, 1U << 7);
+}
+#ifdef ABOX_BOARD_V3
+int ABoxBoardV3_SelectSim(ABoxBoardV3Sim sim)
+{
+    uint32_t key = __get_PRIMASK();
+    __disable_irq();
+    int selected = board_ready && !modem_powered &&
+        (sim == ABOX_BOARD_V3_SIM_PHYSICAL || sim == ABOX_BOARD_V3_SIM_ESIM);
+    if (selected) gpio_bit_write(GPIOC, GPIO_PIN_5, sim == ABOX_BOARD_V3_SIM_ESIM ? SET : RESET);
+    __set_PRIMASK(key);
+    return selected;
+}
+#endif
 static void pwrkey_write(void *context, uint8_t level)
 { (void)context; if (level) gpio_bit_set(GPIOC, 1U << 8); else gpio_bit_reset(GPIOC, 1U << 8); }
 
-int ABoxGdV1_Init(const ABoxBoardConfig *config)
+static int gd_board_init(const ABoxBoardConfig *config)
 {
     static const ABoxFlashLayout layout = {APP_START_ADDR, OTA_INFO_ADDR, OTA_FLASH_PAGE_SIZE};
     static const ABoxPlatformPort port = {
@@ -50,6 +73,11 @@ int ABoxGdV1_Init(const ABoxBoardConfig *config)
     rcu_periph_clock_enable(RCU_GPIOC);
     gpio_bit_reset(GPIOC, (1U << 7) | (1U << 8) | (1U << 9));
     gpio_init(GPIOC, GPIO_MODE_OUT_PP, GPIO_OSPEED_2MHZ, (1U << 7) | (1U << 8) | (1U << 9));
+#ifdef ABOX_BOARD_V3
+    gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_2MHZ, GPIO_PIN_8);
+    gpio_bit_reset(GPIOC, GPIO_PIN_5);
+    modem_powered = 0U;
+#endif
     if (!ABoxGdMonotonic_Init()) return 0;
     for (unsigned i = 0U; i < config->uart_count; ++i)
         if (!ABoxBoardUart_Prepare(config->uarts[i].id) ||
@@ -57,6 +85,13 @@ int ABoxGdV1_Init(const ABoxBoardConfig *config)
     if (!ABox_PlatformPortBind(&port) || !ABox_EcPower_SetConfig(&power)) return 0;
     return 1;
 }
+
+#ifndef ABOX_BOARD_V3
+int ABoxGdV1_Init(const ABoxBoardConfig *config)
+{
+    return gd_board_init(config);
+}
+#endif
 
 int ABoxBoard_Init(const ABoxBoardConfig *config)
 {
@@ -67,7 +102,10 @@ int ABoxBoard_Init(const ABoxBoardConfig *config)
     SCB->VTOR = config->vector_address;
     __DSB();
     __ISB();
-    if (!ABoxGdV1_Init(config)) return 0;
+    if (!gd_board_init(config)) return 0;
+#ifdef ABOX_BOARD_V3
+    board_ready = 1U;
+#endif
     __enable_irq();
     return 1;
 }
