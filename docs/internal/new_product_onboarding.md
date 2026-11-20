@@ -44,6 +44,8 @@ OTA 绑定要求同一 AT 对象和已经完成本地初始化的 MQTT bridge，
 
 统一入口：`tools/build_product_release.ps1 -ProductRoot <path> -AppVersion <version>`。产品必须提供 `tools/release_entry.json` 显式身份、版本参数及产品发布脚本，并提供 `tools/release_contract.json`。禁止从目录推导产品身份。
 
+正式 App 从首版起使用 MCU 厂家后缀，GD32 用 `-gd`，STM32 用 `-st`，单板型新产品同样适用。实现及验收按[正式 App 版本后缀](../PLATFORM_CONTRACT.md#61-正式-app-版本后缀)执行。
+
 流水线只构建 App，消费冻结 `ABox_Boot.bin`，生成原有兼容清单；暂存验证冻结 Boot 哈希、向量、版本、App/State/配置边界、完整拼接及清单一致性，执行产品额外校验后整体替换。任何失败保留或恢复原 dist。底盘额外通过 `tools/artifact_store.py` 管理替换。正式状态只由 dist 清单和实际哈希确定。
 
 ## 验证与证据

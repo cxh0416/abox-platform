@@ -56,7 +56,7 @@ abox_platform_attach_standard_port(Product_App HARDWARE stm32f105_ec800_v1)
 
 正式公共基线为 [MQTT V4](https://github.com/cxh0416/abox-mqtt-contracts/blob/release/docs/protocols/A-BOX设备公共MQTT协议-V4.0.md)；[MQTT V3](docs/protocols/A-BOX设备公共MQTT协议-V3.0.md) 仅供尚未整批迁移的存量项目使用。V4 设备单版本运行，跨项目迁移期间由平台同时保留 V3/V4 Handler。
 
-公共规范、产品业务协议及 [V4 Registry](https://github.com/cxh0416/abox-mqtt-contracts/blob/release/docs/protocols/v4/registry.json) 在 [A-BOX MQTT V4 协议仓](https://github.com/cxh0416/abox-mqtt-contracts) 维护。本平台引用[协议基线 `v4-2026.11.18.1`](https://github.com/cxh0416/abox-mqtt-contracts/tree/c41d04a6074c1a09df4573d741901abe730dee80)。在平台根目录运行 `python tools/validate_mqtt_v4.py` 可离线校验随平台维护的 Core 和固定向量副本。用 `--contracts ../ABox_MQTT_Contracts` 可进一步核对同一基线的原始字节。
+公共规范、产品业务协议及 [V4 Registry](https://github.com/cxh0416/abox-mqtt-contracts/blob/release/docs/protocols/v4/registry.json) 在 [A-BOX MQTT V4 协议仓](https://github.com/cxh0416/abox-mqtt-contracts) 维护。本平台引用[协议基线 `v4-2026.11.20`](https://github.com/cxh0416/abox-mqtt-contracts/tree/becfe62778b77a50737fa3e2d2964edc7d0e07b4)。在平台根目录运行 `python tools/validate_mqtt_v4.py` 可离线校验随平台维护的 Core 和固定向量副本。用 `--contracts ../ABox_MQTT_Contracts` 可进一步核对同一基线的原始字节。
 
 V4 App 公共组件提供请求准入、参数级操作分类、持久幂等、EC800 UFS 双副本日志、Manifest/Report 编码、同步集合、重连退避及内部授时适配。接口、资源和旧存储格式迁移边界见[内部组件接入说明](docs/internal/mqtt_v4_components.md)。各产品通过显式接入采用这些组件，既有控制和存储格式保持产品合同。
 
