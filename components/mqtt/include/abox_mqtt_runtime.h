@@ -117,7 +117,7 @@ typedef struct {
   ABoxMqttRuntimeState state;
   uint32_t started;
   uint8_t waiting, disconnect_step, active_tls, initialized, candidate_staged, recovering;
-  uint8_t blocked, tls_probe_supported, tls_probe_complete, safety_locked;
+  uint8_t blocked, tls_probe_result, tls_probe_complete, safety_locked, tls_probe_retried;
   ABoxMqttConfig requested, active;
   char host[64], username[32], password[64];
   char active_host[64], active_username[32], active_password[64];

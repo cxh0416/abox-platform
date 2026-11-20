@@ -343,6 +343,7 @@ int main(void)
         ABoxMqttRuntime probe_runtime;
         const ABoxMqttConfig tls_probe_config = {"secure.example", 8883U, "u", "p", 1U, 0U};
         uint32_t now;
+        unsigned attempts = 0U;
         options.probe_tls_capability = 1U;
         at_port.context = &probed;
         port.user = &probed;
@@ -351,7 +352,7 @@ int main(void)
         assert(ABoxMqttRuntime_Init(&probe_runtime, &probe_at, &port,
                                     &options, &tls_probe_config, 0U));
         assert(probe_runtime.tls.supported_mask == 0U);
-        for (now = 1U; now < 80U && !ABoxMqttRuntime_IsReady(&probe_runtime); ++now) {
+        for (now = 1U; now < 2000U && !ABoxMqttRuntime_IsReady(&probe_runtime); ++now) {
             probed.now = now;
             if (probe_runtime.state == ABOX_MQTT_RUNTIME_CONNECT ||
                 probe_runtime.state == ABOX_MQTT_RUNTIME_CONNECTED)
@@ -359,18 +360,52 @@ int main(void)
             ABoxMqttRuntime_Poll(&probe_runtime, now);
             ABoxEc800At_Task(&probe_at);
             if (probe_at.active_valid) {
-                const char *reply = strstr(probed.last_command, "AT+QSSLCFG=?") ?
-                    "+QSSLCFG: \"sslversion\",(0-5)\r\nOK\r\n" : "OK\r\n";
+                const char *reply = "OK\r\n";
+                if (strstr(probed.last_command, "AT+QSSLCFG=?") && ++attempts == 2U)
+                    reply = "+QSSLCFG: \"sslversion\",(0-5),(0-4)\r\nOK\r\n";
                 ABoxEc800At_Feed(&probe_at, (const uint8_t *)reply,
                                  (uint16_t)strlen(reply));
             }
         }
         assert(ABoxMqttRuntime_IsReady(&probe_runtime));
+        assert(attempts == 2U);
         assert(probe_runtime.tls_probe_complete &&
                probe_runtime.tls.supported_mask == 4U);
         ABoxMqttRuntime_OnModemReset(&probe_runtime, now);
         assert(!probe_runtime.tls_probe_complete &&
                probe_runtime.tls.supported_mask == 0U);
+    }
+    {
+        Fixture incomplete = {0};
+        ABoxEc800At incomplete_at;
+        ABoxMqttRuntime incomplete_runtime;
+        const ABoxMqttConfig tls_probe_config = {"secure.example", 8883U, "u", "p", 1U, 0U};
+        const char *reply = "+QSSLCFG: \"sslversion\",(0-1\r\nOK\r\n";
+        uint32_t now;
+        unsigned attempts = 0U;
+        at_port.context = &incomplete;
+        port.user = &incomplete;
+        assert(ABoxEc800At_Init(&incomplete_at, &at_port));
+        assert(ABoxMqttRuntime_Init(&incomplete_runtime, &incomplete_at,
+                                    &port, &options, &tls_probe_config, 0U));
+        for (now = 1U; now < 2000U && incomplete_runtime.state != ABOX_MQTT_RUNTIME_FAILED; ++now) {
+            incomplete.now = now;
+            ABoxMqttRuntime_Poll(&incomplete_runtime, now);
+            ABoxEc800At_Task(&incomplete_at);
+            if (incomplete_at.active_valid) {
+                assert(strstr(incomplete.last_command, "AT+QSSLCFG=?"));
+                ++attempts;
+                ABoxEc800At_Feed(&incomplete_at, (const uint8_t *)reply,
+                                 (uint16_t)strlen(reply));
+            }
+        }
+        assert(attempts == 2U && incomplete_runtime.state == ABOX_MQTT_RUNTIME_FAILED);
+        assert(!incomplete_runtime.safety_locked && ABoxMqttRuntime_NeedsModemRecovery(&incomplete_runtime));
+        assert(incomplete.paused && !incomplete.security && !incomplete_runtime.lease.generation);
+        ABoxEc800At_OnModemReset(&incomplete_at);
+        assert(incomplete_runtime.state == ABOX_MQTT_RUNTIME_WAIT_CA);
+        ABoxMqttRuntime_Poll(&incomplete_runtime, now);
+        assert(incomplete_runtime.state == ABOX_MQTT_RUNTIME_PROBE_TLS);
     }
     {
         Fixture unsupported = {0};

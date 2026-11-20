@@ -1,6 +1,10 @@
 #include "abox_mqtt_runtime.h"
 #include <stdio.h>
 #include <string.h>
+
+enum { TLS_PROBE_NO_RANGE, TLS_PROBE_SUPPORTED, TLS_PROBE_UNSUPPORTED };
+#define TLS_PROBE_RETRY_DELAY_MS 1000U
+
 void ABoxMqttRuntimeOptions_StandardEc800(ABoxMqttRuntimeOptions *o,
                                           uint32_t owner,
                                           uint8_t tls_profile_id) {
@@ -90,6 +94,7 @@ static int start(ABoxMqttRuntime *r, uint32_t now) {
     return 1;
   }
   r->started = now;
+  r->tls_probe_retried = 0U;
   if (!r->requested.tls_enabled) {
     if (!r->callbacks.apply_config(r->callbacks.user, &r->requested))
       return 0;
@@ -129,6 +134,7 @@ static void event(ABoxEc800Event e, const uint8_t *d, uint16_t n, void *u) {
   ABoxMqttRuntime *r = u;
   char l[48];
   unsigned low, high;
+  char end;
   if (!r || e != ABOX_EC800_EVENT_LINE)
     return;
   if (n >= sizeof(l))
@@ -141,9 +147,10 @@ static void event(ABoxEc800Event e, const uint8_t *d, uint16_t n, void *u) {
   }
   if (r->state == ABOX_MQTT_RUNTIME_PROBE_TLS &&
       ABoxEc800At_IsActive(r->adapter.at, r->options.owner) &&
-      sscanf(l, "+QSSLCFG: \"sslversion\",(%u-%u)", &low, &high) == 2 &&
-      low <= r->options.tls_context && high >= r->options.tls_context)
-    r->tls_probe_supported = 1U;
+      sscanf(l, "+QSSLCFG: \"sslversion\", (%2u - %2u %c", &low, &high, &end) == 3 &&
+      end == ')' && low <= high && high <= UINT8_MAX)
+    r->tls_probe_result = low <= r->options.tls_context && high >= r->options.tls_context
+                              ? TLS_PROBE_SUPPORTED : TLS_PROBE_UNSUPPORTED;
   if (r->callbacks.observe_modem_line)
     r->callbacks.observe_modem_line(r->callbacks.user, l);
 }
@@ -474,10 +481,12 @@ static void prepare_poll(ABoxMqttRuntime *r, uint32_t now) {
         !r->callbacks.ca_ready(r->callbacks.user))
       return;
     if (r->options.probe_tls_capability && !r->tls_probe_complete) {
+      if (r->tls_probe_retried && (uint32_t)(now - r->started) < TLS_PROBE_RETRY_DELAY_MS)
+        return;
       if (!r->command.submit(r->command.context, "AT+QSSLCFG=?",
                              r->options.command_timeout_ms, &r->operation))
         return;
-      r->tls_probe_supported = 0U;
+      r->tls_probe_result = TLS_PROBE_NO_RANGE;
       state(r, ABOX_MQTT_RUNTIME_PROBE_TLS, "tls-capability");
       return;
     }
@@ -505,13 +514,24 @@ static void prepare_poll(ABoxMqttRuntime *r, uint32_t now) {
   if (r->state == ABOX_MQTT_RUNTIME_PROBE_TLS) {
     s = r->command.poll(r->command.context, r->operation);
     if (s == ABOX_ASYNC_PENDING) return;
-    if (s == ABOX_ASYNC_OK && !r->tls_probe_supported) {
+    if (s == ABOX_ASYNC_OK && r->tls_probe_result == TLS_PROBE_NO_RANGE) {
+      /* A terminal OK can arrive even when the capability line is missing. */
+      if (r->tls_probe_retried) {
+        fail(r, "tls-capability-incomplete");
+      } else {
+        r->tls_probe_retried = 1U;
+        r->started = now;
+        state(r, ABOX_MQTT_RUNTIME_WAIT_CA, "tls-capability-retry");
+      }
+      return;
+    }
+    if (s == ABOX_ASYNC_OK && r->tls_probe_result == TLS_PROBE_UNSUPPORTED) {
       /* An observed unsupported context cannot be repaired by rail cycling. */
       r->safety_locked = r->blocked = 1U;
       fail(r, "tls-capability-unsupported");
       return;
     }
-    if (s != ABOX_ASYNC_OK || !r->tls_probe_supported ||
+    if (s != ABOX_ASYNC_OK ||
         !ABoxEc800Tls_SetSupportedMask(&r->tls,
                                       r->options.supported_tls_context_mask)) {
       fail(r, "tls-capability");
@@ -620,7 +640,8 @@ void ABoxMqttRuntime_OnModemReset(ABoxMqttRuntime *r, uint32_t now) {
   ABoxEc800CommandAdapter_OnModemReset(&r->adapter);
   ABoxEc800Tls_OnModemReset(&r->tls);
   if (r->options.probe_tls_capability) {
-    r->tls_probe_complete = r->tls_probe_supported = 0U;
+    r->tls_probe_complete = 0U;
+    r->tls_probe_result = TLS_PROBE_NO_RANGE;
     (void)ABoxEc800Tls_SetSupportedMask(&r->tls, 0U);
   }
   ABoxMqttTls_OnModemReset(&r->mqtt_tls);
